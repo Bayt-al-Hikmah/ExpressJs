@@ -165,5 +165,3 @@ Let’s break down what’s happening in this code:
 - **Fake Database**: We create a `productsDb` object to simulate a database with a few products. Each product has a `name` and `price`, stored under a unique ID (e.g., `"100"`).
 - **Route Definition**: The `app.get('/api/products/:productId', ...)` route captures the `productId` from the URL using the `:productId` parameter.
 - **Error Handling**: If the requested `productId` doesn’t exist in `productsDb`, we return a JSON error message with a **404 status code**, which tells the client the resource wasn’t found.
-
--
