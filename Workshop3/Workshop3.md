@@ -1,32 +1,53 @@
-### Objectives
+## Objectives
+
 - Implement user **registration, login, and logout** functionality using Express `express-session`.
 - Build a simple wiki app where users can create and view pages.
 - Handle **rich text** input safely using Markdown.
 - Allow users to **upload files** (like avatars) and manage them securely.
 - Explore the evolution of CSS: from component classes to **utility-first frameworks**.
-### User Authentication
-For this workshop, we’ll build a simple wiki application where users can register, log in, logout, and create content. Since we’re not using a database yet, we’ll simulate user storage with a JavaScript object. In a real application, you’d replace this with a database like MongoDB or PostgreSQL.
-#### Simulating Our Database
-In our application, we’ll create a JavaScript object to hold user and page data. This acts as our in-memory “database” for now.
+
+## User Authentication
+
+User authentication is a foundational aspect of web applications, ensuring that only authorized individuals can access certain features or data. In our wiki app, authentication allows us to track who creates content, personalize experiences, and secure sensitive actions like uploading files. We'll use session-based authentication, which is straightforward for server-side apps like those built with Express.js. This method stores user information on the server and sends a session ID to the client via cookies, making it secure against common attacks when configured properly.
+
+### Simulating Our Database
+
+Since we’re not using a database yet, we’ll simulate user storage with a JavaScript object. In a real application, you’d replace this with a database like MongoDB or PostgreSQL. Simulating a database with in-memory objects is a common practice during development or for small-scale prototypes. It allows us to focus on application logic without the overhead of setting up a full database system. However, keep in mind that this data will be lost when the server restarts, so it's not suitable for production. In a real-world scenario, you'd integrate an ORM like Mongoose for MongoDB to persist data across sessions.
+
 **`routes/data.js`:**
-```
+
+```javascript
 const users = {}; // e.g., { 'username': { password: 'password123', avatar: null } }
 const pages = {}; // e.g., { 'HomePage': { content: 'Welcome!', author: 'admin' } }
 
 module.exports = { users, pages };
 ```
-#### The Express `express-session` Middleware
-How does our app remember who’s logged in across requests? Express uses the `express-session` middleware to manage **sessions**, which store user data in a secure cookie on the client’s browser. We can store information like the username in the session and access it on subsequent requests.  
-To use sessions, Express requires a `secret` for signing the session cookie to prevent tampering. We’ll set this up in our main app file and use middleware to handle authentication.
+
+This simple object structure mimics key-value storage: users are indexed by username, and pages by their titles. Each user entry holds a password (stored in plain text here for simplicity—never do this in production; use hashing with libraries like bcrypt) and an optional avatar. Pages store content, author, and later, flags for content type.
+
+### The Express `express-session` Middleware
+
+How does our app remember who’s logged in across requests? Express uses the `express-session` middleware to manage **sessions**, which store user data in a secure cookie on the client’s browser. We can store information like the username in the session and access it on subsequent requests. Sessions solve the stateless nature of HTTP by maintaining state between requests. The middleware generates a unique session ID, signs it with a secret key to prevent tampering, and stores session data on the server (or in a store like Redis for scalability). This approach is more secure than storing sensitive data in cookies directly, as only the ID is sent to the client.
+
+To use sessions, Express requires a `secret` for signing the session cookie to prevent tampering. We’ll set this up in our main app file and use middleware to handle authentication. The secret should be a long, random string kept private (e.g., via environment variables). Options like `resave` and `saveUninitialized` control session persistence; setting them to false optimizes performance by avoiding unnecessary saves.
+
 **Install required packages**:
-```
+
+```bash
 npm install express express-session ejs marked express-validator multer
 ```
-#### Modular Routing with Express Router
-Instead of defining all routes in `app.js`, we’ll use Express’s `Router` to organize routes into separate files for better modularity. This approach keeps our code clean and scalable, especially as the app grows. Each router acts as a mini-app, handling specific routes and middleware.  
+
+These packages provide: Express for the web framework, express-session for sessions, EJS for templating, marked for Markdown parsing, express-validator for input validation, and multer for file uploads. Always install dependencies at the start to ensure your environment is ready.
+
+### Modular Routing with Express Router
+
+Instead of defining all routes in `app.js`, we’ll use Express’s `Router` to organize routes into separate files for better modularity. This approach keeps our code clean and scalable, especially as the app grows. Each router acts as a mini-app, handling specific routes and middleware. Modular routing promotes separation of concerns, making it easier to maintain large applications. For instance, authentication logic stays isolated from wiki content routes, reducing bugs and improving collaboration in teams. Express Router allows mounting these mini-apps at specific paths, like `/auth` if needed.
+
 Create a `routes` folder with an `auth.js` file for authentication routes and a `wiki.js` file for wiki-related routes.
+
 **`routes/auth.js`:**
-```
+
+```javascript
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { users } = require('./data');
@@ -93,13 +114,17 @@ router.get('/logout', (req, res) => {
 
 module.exports = router;
 ```
+
+In this file, we handle GET and POST routes for registration, login, and logout. Validation with express-validator prevents common issues like empty fields or short passwords, sanitizing input to avoid security risks. Errors and messages are stored in the session for flash notifications, which are cleared after display to prevent repetition. The logout route destroys the session, effectively logging the user out.
+
 **`app.js`:**
 
-```
+```javascript
 const express = require('express');
 const session = require('express-session');
 const authRoutes = require('./routes/auth');
 const wikiRoutes = require('./routes/wiki');
+const profileRoutes = require('./routes/profile');
 const app = express();
 const port = 3000;
 
@@ -114,6 +139,7 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use(authRoutes);
 app.use(wikiRoutes);
+app.use(profileRoutes);
 
 app.get('/', (req, res) => {
     res.render('index', { username: req.session.username, messages: req.session.messages || [] });
@@ -124,9 +150,12 @@ app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
 });
 ```
-We use `express-session` to manage user sessions and `express.urlencoded` to parse form data. The `authRoutes` and `wikiRoutes` routers handle authentication and wiki functionality, respectively. Messages are stored in `req.session.messages`.
+
+This main file sets up the Express app, configures the view engine (EJS for dynamic HTML), serves static files from 'public', initializes sessions, and parses URL-encoded form data. Routes are mounted, and the root route renders an index page with session-based username and messages. The server listens on port 3000, a common development port.
+
 **`views/layout.ejs`:**
-```
+
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -176,8 +205,12 @@ We use `express-session` to manage user sessions and `express.urlencoded` to par
 </body>
 </html>
 ```
+
+EJS templates allow embedding JavaScript in HTML for dynamic content. This layout serves as a base template, including a header with conditional navigation based on login status, a main content area for flash messages (temporary notifications) and the page body, and a footer. The `<%- body %>` tag injects child template content.
+
 **`views/register.ejs`:**
-```
+
+```html
 <%- include('layout') %>
 <h1 class="page-title">Create an account</h1>
 
@@ -204,8 +237,12 @@ We use `express-session` to manage user sessions and `express.urlencoded` to par
     </div>
 </form>
 ```
+
+This template extends the layout and provides a registration form. It displays field-specific errors inline, improving user experience by highlighting issues directly. The 'required' attribute adds client-side validation, but server-side checks are essential for security.
+
 **`views/login.ejs`:**
-```
+
+```html
 <%- include('layout') %>
 <h1 class="page-title">Log in</h1>
 
@@ -232,8 +269,12 @@ We use `express-session` to manage user sessions and `express.urlencoded` to par
     </div>
 </form>
 ```
+
+Similar to registration, this login form uses EJS to show errors and includes a link to register, guiding new users seamlessly.
+
 **`public/style.css`:**
-```
+
+```css
 /* Basic reset */
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; }
 
@@ -375,77 +416,28 @@ body {
     color: var(--muted);
     font-size: 0.9rem;
 }
+
+/* Avatar */
+.avatar { max-width: 150px; border-radius: 10px; margin-bottom: 12px; }
 ```
-### Rich Text and Pages
-A wiki needs to support **rich text** for formatted content like headings, bold text, and lists. Instead of allowing raw HTML (which is insecure), we’ll use **Markdown** and convert it to HTML on the server using the `marked` library.  
-Install `marked`:
-```
+
+This CSS file uses CSS variables for theming, a modern approach for easy customization. It includes resets for consistent rendering, layout rules for responsiveness, and classes for headers, forms, buttons, and flash messages. The design emphasizes clean, professional aesthetics with subtle shadows and borders for depth.
+
+## Rich Text and Pages
+
+A wiki needs to support **rich text** for formatted content like headings, bold text, and lists. Instead of allowing raw HTML (which is insecure), we’ll use **Markdown** and convert it to HTML on the server using the `marked` library. Rich text enhances user-generated content by allowing formatting without compromising security. Raw HTML inputs can lead to XSS (Cross-Site Scripting) attacks, where malicious scripts are injected. Markdown is a lightweight markup language that's easy to learn and safe when parsed correctly—it converts plain text to HTML while sanitizing potential threats.
+
+**Install `marked`:**
+
+```bash
 npm install marked
 ```
-The wiki routes are defined in `routes/wiki.js` (shown above). The `/wiki/:pageName` route converts Markdown to HTML using `marked`, and the `/create` route lets users create pages with Markdown input.
-**`views/wiki_page.ejs`:**
-```
-<%- include('layout') %>
-<h1><%= pageName %></h1>
-<p><em>By: <%= page.author %></em></p>
-<hr>
-<div>
-    <%- page.htmlContent %>
-</div>
-```
-**`views/create_page.ejs`:**
-```
-<%- include('layout') %>
-<h1 class="page-title">Create a Wiki Page</h1>
 
-<form method="POST" class="form-card">
-    <label for="title">Page Title</label>
-    <input id="title" name="title" type="text" required>
-    <% errors.forEach(error => { %>
-        <% if (error.param === 'title') { %>
-            <span style="color:red;"><%= error.msg %></span><br>
-        <% } %>
-    <% }) %>
+The `marked` library is a fast, reliable Markdown parser that outputs HTML. It's configurable for custom rendering if needed.
 
-    <label for="content">Content (Markdown supported)</label>
-    <textarea id="content" name="content" rows="12" placeholder="# Heading
-Write your text here...
-- bullet list
-**bold text**
-*italic text*"></textarea>
-    <% errors.forEach(error => { %>
-        <% if (error.param === 'content') { %>
-            <span style="color:red;"><%= error.msg %></span><br>
-        <% } %>
-    <% }) %>
+**`routes/wiki.js`:**
 
-    <div class="form-actions">
-        <button type="submit" class="btn btn-primary">Create Page</button>
-    </div>
-</form>
-
-<div class="card" style="margin-top:16px;">
-    <h3>Markdown Quick Reference</h3>
-    <ul>
-        <li><code># Heading</code> → Heading</li>
-        <li><code>**bold**</code> → <strong>bold</strong></li>
-        <li><code>*italic*</code> → <em>italic</em></li>
-        <li><code>- Item</code> → bullet list</li>
-        <li><code>[Link](https://example.com)</code> → link</li>
-    </ul>
-</div>
-```
-The `<%- %>` tag in `wiki_page.ejs` renders HTML content unescaped, as `marked` generates safe HTML from Markdown.
-### Using CKEditor in Express
-
-Markdown is great, but some users prefer a visual editor. **CKEditor** provides a WYSIWYG (What You See Is What You Get) interface, outputting HTML directly. We’ll use the `ckeditor` npm package to integrate it.
-**Install CKEditor**:
-```
-npm install ckeditor4
-```
-Update `routes/wiki.js` to handle CKEditor input with `express-validator`:
-**`routes/wiki.js` (updated `create` routes):**
-```
+```javascript
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const marked = require('marked');
@@ -510,8 +502,84 @@ router.post('/create-ck', requireLogin, [
 
 module.exports = router;
 ```
-**`views/create_page_ck.ejs`:**
+
+These routes handle viewing and creating pages, with middleware to enforce login for creation. Dynamic routing with `:pageName` allows flexible page access. The `requireLogin` middleware protects creation routes. In viewing, we conditionally parse content based on the `isMarkdown` flag, ensuring correct rendering.
+
+**`views/wiki_page.ejs`:**
+
+```html
+<%- include('layout') %>
+<h1><%= pageName %></h1>
+<p><em>By: <%= page.author %></em></p>
+<hr>
+<div>
+    <%- page.htmlContent %>
+</div>
 ```
+
+This template displays the page title, author, and rendered HTML content. The `<%- %>` tag is used for unescaped output, trusting the sanitized HTML from `marked`.
+
+**`views/create_page.ejs`:**
+
+```html
+<%- include('layout') %>
+<h1 class="page-title">Create a Wiki Page</h1>
+
+<form method="POST" class="form-card">
+    <label for="title">Page Title</label>
+    <input id="title" name="title" type="text" required>
+    <% errors.forEach(error => { %>
+        <% if (error.param === 'title') { %>
+            <span style="color:red;"><%= error.msg %></span><br>
+        <% } %>
+    <% }) %>
+
+    <label for="content">Content (Markdown supported)</label>
+    <textarea id="content" name="content" rows="12" placeholder="# Heading
+Write your text here...
+- bullet list
+**bold text**
+*italic text*"></textarea>
+    <% errors.forEach(error => { %>
+        <% if (error.param === 'content') { %>
+            <span style="color:red;"><%= error.msg %></span><br>
+        <% } %>
+    <% }) %>
+
+    <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Create Page</button>
+    </div>
+</form>
+
+<div class="card" style="margin-top:16px;">
+    <h3>Markdown Quick Reference</h3>
+    <ul>
+        <li><code># Heading</code> → Heading</li>
+        <li><code>**bold**</code> → <strong>bold</strong></li>
+        <li><code>*italic*</code> → <em>italic</em></li>
+        <li><code>- Item</code> → bullet list</li>
+        <li><code>[Link](https://example.com)</code> → link</li>
+    </ul>
+</div>
+```
+
+The creation form includes a textarea with a placeholder demonstrating Markdown syntax. A quick reference card educates users, making the app more user-friendly for beginners.
+
+## Using CKEditor in Express
+
+Markdown is great, but some users prefer a visual editor. **CKEditor** provides a WYSIWYG (What You See Is What You Get) interface, outputting HTML directly. We’ll use the `ckeditor` npm package to integrate it. WYSIWYG editors like CKEditor allow non-technical users to format text visually, similar to word processors. It generates HTML under the hood, but we must sanitize outputs to prevent XSS. CKEditor includes built-in security features, but always validate on the server.
+
+**Install CKEditor**:
+
+```bash
+npm install ckeditor4
+```
+
+This installs version 4 of CKEditor, a stable, feature-rich editor. For newer versions, consider CKEditor 5, which has a modular architecture.
+
+**`views/create_page_ck.ejs`:**
+
+```html
 <%- include('layout') %>
 <h1 class="page-title">Create a Wiki Page (CKEditor)</h1>
 
@@ -542,16 +610,22 @@ module.exports = router;
     CKEDITOR.replace('content');
 </script>
 ```
-Copy the CKEditor library to `public/ckeditor/` after downloading from `node_modules/ckeditor4/`. The `isMarkdown` flag in the `pages` object distinguishes between Markdown and CKEditor content, as CKEditor outputs HTML directly.
-### File Uploads
-Let’s allow users to upload profile pictures (avatars) using the `multer` middleware for secure file handling.  
+
+This template replaces the textarea with CKEditor via JavaScript, transforming it into a rich editor. Ensure the CKEditor files are in `/public/ckeditor/` for the script to load. Copy the CKEditor library to `public/ckeditor/` after downloading from `node_modules/ckeditor4/`.
+
+## File Uploads
+
+Let’s allow users to upload profile pictures (avatars) using the `multer` middleware for secure file handling. File uploads are essential for features like avatars or attachments, but they introduce risks like server overload or malicious files. Multer handles multipart/form-data, parses files, and allows custom storage and filtering.
+
 **Install multer**:
-```
+
+```bash
 npm install multer
 ```
-Configure `multer` to store files in `public/avatars` with allowed extensions:  
-**`routes/profile.js`:**  
-```
+
+**`routes/profile.js`:**
+
+```javascript
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
@@ -598,15 +672,12 @@ router.post('/', requireLogin, upload.single('avatar'), (req, res) => {
 
 module.exports = router;
 ```
-Update `app.js` to include the profile router:
-```
-const profileRoutes = require('./routes/profile');
-// ...
-app.use(profileRoutes);
-```
-Create the `public/avatars` folder before running the app. The `multer` middleware handles file uploads, ensuring only allowed file types are saved.  
+
+This router handles profile viewing and updating. Multer's `single` method processes one file named 'avatar'. The filename is stored in the user object for display. Configure `multer` to store files in `public/avatars` with allowed extensions. Multer's configuration includes destination folders and file filters to restrict types, preventing uploads of executables or oversized files. Create the `public/avatars` folder before running the app.
+
 **`views/profile.ejs`:**
-```
+
+```html
 <%- include('layout') %>
 <div class="container">
     <h1>Welcome, <%= user.username %></h1>
@@ -626,17 +697,20 @@ Create the `public/avatars` folder before running the app. The `multer` middlewa
     </form>
 </div>
 ```
-**Update `public/style.css` (add to existing):**
-```
-.avatar { max-width: 150px; border-radius: 10px; margin-bottom: 12px; }
-```
-The `enctype="multipart/form-data"` attribute is crucial for file uploads. `multer` sanitizes and saves files securely, and the `fileFilter` ensures only images are accepted.
-### A Journey Through CSS Styling
-Our wiki app is functional, but its appearance could use some polish. Let’s explore how CSS has evolved to make styling more efficient and maintainable.
-#### Act I: The Specific Approach (Class-per-Element)
-When starting with CSS, it’s tempting to create a unique class for each element. For example, a login button might have a class `.login-page-button` with all its styles defined explicitly.  
+
+The form uses `enctype="multipart/form-data"` to support file uploads. Conditional rendering shows the avatar if available. The `enctype="multipart/form-data"` attribute is crucial for file uploads. `multer` sanitizes and saves files securely, and the `fileFilter` ensures only images are accepted.
+
+## A Journey Through CSS Styling
+
+Our wiki app is functional, but its appearance could use some polish. Let’s explore how CSS has evolved to make styling more efficient and maintainable. CSS evolution reflects the need for scalable, maintainable stylesheets as web apps grow complex. From ad-hoc classes to systematic frameworks, each stage addresses pain points like duplication and specificity wars.
+
+### Act I: The Specific Approach (Class-per-Element)
+
+When starting with CSS, it’s tempting to create a unique class for each element. For example, a login button might have a class `.login-page-button` with all its styles defined explicitly. This approach is straightforward for small projects but leads to bloated stylesheets. Each element gets tailored styles, often resulting in copied code when similar elements appear elsewhere.
+
 **`public/style.css` (example):**
-```
+
+```css
 .login-page-button {
     background-color: blue;
     color: white;
@@ -644,15 +718,22 @@ When starting with CSS, it’s tempting to create a unique class for each elemen
     border-radius: 5px;
 }
 ```
+
 **HTML:**
-```
+
+```html
 <button class="login-page-button">Login</button>
 ```
-**Problem**: If we need a similar button on the register page, we’d create `.register-page-button` and duplicate the styles. This violates DRY (Don’t Repeat Yourself) principles, making maintenance difficult.
-#### Act II: The Reusable Component (Shared Classes)
-To avoid repetition, we create reusable **component classes**. A `.btn` class defines common button styles, and a `.btn-primary` class adds specific colors.  
+
+**Problem**: If we need a similar button on the register page, we’d create `.register-page-button` and duplicate the styles. This violates DRY (Don’t Repeat Yourself) principles, making maintenance difficult. Updating a common style, like changing padding, requires editing multiple classes, increasing error risk.
+
+### Act II: The Reusable Component (Shared Classes)
+
+To avoid repetition, we create reusable **component classes**. A `.btn` class defines common button styles, and a `.btn-primary` class adds specific colors. Component-based styling, popularized by libraries like Bootstrap, treats UI elements as building blocks. Base classes handle structure, modifiers add variations, promoting consistency across the app.
+
 **`public/style.css` (example):**
-```
+
+```css
 .btn {
     padding: 10px 20px;
     border-radius: 5px;
@@ -662,13 +743,18 @@ To avoid repetition, we create reusable **component classes**. A `.btn` class de
     color: white;
 }
 ```
+
 **HTML:**
-```
+
+```html
 <button class="btn btn-primary">Login</button>
 <button class="btn btn-primary">Register</button>
 ```
-This approach, used by frameworks like Bootstrap, keeps styles DRY and makes updates easier by centralizing component styles.  
-#### Act III: The Utility-First Revolution
+
+This approach, used by frameworks like Bootstrap, keeps styles DRY and makes updates easier by centralizing component styles. Changes propagate automatically, and it's easier to theme the app by swapping modifier classes.
+
+### Act III: The Utility-First Revolution
+
 Utility-first frameworks like **Tailwind CSS** take reusability further by providing single-purpose classes for individual CSS properties:
 
 - `bg-blue-500`: Sets background color.
@@ -676,8 +762,10 @@ Utility-first frameworks like **Tailwind CSS** take reusability further by provi
 - `p-4`: Sets padding.
 - `rounded-md`: Sets border-radius.
 
-Instead of defining components, we combine these utilities directly in HTML, building styles on the fly. This creates a flexible, maintainable styling system without custom CSS for every component.  
+Utility classes shift composition to HTML, reducing custom CSS needs. This speeds up development for prototypes and maintains flexibility without overriding styles. Instead of defining components, we combine these utilities directly in HTML, building styles on the fly. This creates a flexible, maintainable styling system without custom CSS for every component. Tailwind also includes tools for purging unused classes in production, keeping bundles small. It's ideal for custom designs without framework lock-in.
+
 **Example (with Tailwind classes):**
-```
+
+```html
 <button class="bg-blue-500 text-white p-4 rounded-md">Login</button>
 ```
