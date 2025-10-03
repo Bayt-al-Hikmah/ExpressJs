@@ -1,7 +1,7 @@
 ## Objectives
 - What is Backend Development?
 - Introduction to Node.js and Express
-- The MVC Design Pattern in Express
+- The Middleware-Based Architecture in Express.js
 - Structure of an Express App
 - Creating Our First Express Application
 - Working with Routes, Parameters, and URL Arguments
