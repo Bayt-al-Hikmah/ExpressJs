@@ -201,3 +201,36 @@ Let’s break down what’s happening in this code:
 - **Route Definition**: The `app.get('/api/products/:productId', ...)` route captures the `productId` from the URL using the `:productId` parameter.
 - **Error Handling**: If the requested `productId` doesn’t exist in `productsDb`, we return a JSON error message with a **404 status code**, which tells the client the resource wasn’t found.
 - **Sending JSON Response**: The line `res.json(responseData)` takes the JavaScript object we built (`responseData`) and automatically converts it into a JSON-formatted string then send it back to the client.
+## Tasks
+### Task 1: 
+In this task, we’ll create a simple **user profile API** using Express. The goal is to simulate how a backend can provide dynamic user data in **JSON format**. Instead of using a database, we’ll work with hardcoded data to keep things simple.  
+
+We’ll define a route `/api/profile/:username` that works as follows:
+- It should return a JSON object with a fake user profile.
+- It also accepts an optional query parameter `details`:
+    - If `details=true`, return extended information (like email and role).
+    - Otherwise, return only the basic information (just the username).
+    
+
+**Example Outputs:**
+- Request: `/api/profile/Alice`  
+    **Response:** `{ "username": "Alice" }`
+    
+- Request: `/api/profile/Alice?details=true`  
+    **Response:** `{ "username": "Alice", "email": "alice@example.com", "role": "admin" }`
+### Task 2: 
+In this task, we’ll build a **book information API** using Express. Just like with the user profiles, we’ll simulate a small “database” using hardcoded data for different books. The goal is to demonstrate how an API can return different levels of detail depending on what the client requests.
+
+We’ll define a route `/api/books/:bookId` that works as follows:
+- It should return book details based on the `bookId` parameter.
+- It also accepts an optional query parameter `summary`:
+    - If `summary=true`, return only the book’s **title** and **author**.
+    - Otherwise, return the full details including **title**, **author**, and **price**.
+        
+
+**Example Outputs:**
+- Request: `/api/books/201`  
+    **Response:** `{ "id": "201", "title": "Clean Code", "author": "Robert C. Martin", "price": 35 }`
+
+- Request: `/api/books/201?summary=true`  
+    **Response:** `{ "id": "201", "title": "Clean Code", "author": "Robert C. Martin" }`
