@@ -233,4 +233,4 @@ We’ll define a route `/api/books/:bookId` that works as follows:
     **Response:** `{ "id": "201", "title": "Clean Code", "author": "Robert C. Martin", "price": 35 }`
 
 - Request: `/api/books/201?summary=true`  
-    **Response:** `{ "id": "201", "title": "Clean Code", "author": "Robert C. Martin" }`
+    **Response:** `{ "title": "Clean Code", "author": "Robert C. Martin" }`
