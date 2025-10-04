@@ -537,7 +537,7 @@ app.listen(port, () => {
     <label for="name">Name:</label><br>
     <input type="text" id="name" name="name" value="<%= submittedName || '' %>"><br>
     <% errors.forEach(error => { %>
-        <% if (error.param === 'name') { %>
+        <% if (error.path === 'name') { %>
             <span style="color:red;"><%= error.msg %></span><br>
         <% } %>
     <% }) %>
@@ -545,7 +545,7 @@ app.listen(port, () => {
     <label for="email">Email:</label><br>
     <input type="email" id="email" name="email"><br>
     <% errors.forEach(error => { %>
-        <% if (error.param === 'email') { %>
+        <% if (error.path === 'email') { %>
             <span style="color:red;"><%= error.msg %></span><br>
         <% } %>
     <% }) %>
@@ -553,7 +553,7 @@ app.listen(port, () => {
     <label for="message">Message:</label><br>
     <textarea id="message" name="message"></textarea><br>
     <% errors.forEach(error => { %>
-        <% if (error.param === 'message') { %>
+        <% if (error.path === 'message') { %>
             <span style="color:red;"><%= error.msg %></span><br>
         <% } %>
     <% }) %>
@@ -663,7 +663,7 @@ We add hidden input with the csrf token `` <input type="hidden" name="_csrf" val
     <label for="name">Name:</label><br>
     <input type="text" id="name" name="name" value="<%= submittedName || '' %>"><br>
     <% errors.forEach(error => { %>
-        <% if (error.param === 'name') { %>
+        <% if (error.path === 'name') { %>
             <span style="color:red;"><%= error.msg %></span><br>
         <% } %>
     <% }) %>
@@ -671,7 +671,7 @@ We add hidden input with the csrf token `` <input type="hidden" name="_csrf" val
     <label for="email">Email:</label><br>
     <input type="email" id="email" name="email"><br>
     <% errors.forEach(error => { %>
-        <% if (error.param === 'email') { %>
+        <% if (error.path === 'email') { %>
             <span style="color:red;"><%= error.msg %></span><br>
         <% } %>
     <% }) %>
@@ -679,7 +679,7 @@ We add hidden input with the csrf token `` <input type="hidden" name="_csrf" val
     <label for="message">Message:</label><br>
     <textarea id="message" name="message"></textarea><br>
     <% errors.forEach(error => { %>
-        <% if (error.param === 'message') { %>
+        <% if (error.path === 'message') { %>
             <span style="color:red;"><%= error.msg %></span><br>
         <% } %>
     <% }) %>
@@ -691,3 +691,49 @@ We add hidden input with the csrf token `` <input type="hidden" name="_csrf" val
 <% } %>
 <%- include('partials/_footer') %>
 ```
+## Task
+In this project, you will build a Quote Sharing Web Application using Express and EJS templats.  
+The application will allow users to:
+
+- Submit quotes anonymously by providing the author’s name and the quote text.
+- Browse all submitted quotes in a styled interface.
+- Search for quotes by a specific author.
+- Use reusable layouts, partials, and static assets for a consistent design.
+
+### Functional Requirements
+
+#### Homepage (`/`)
+
+- Displays a welcome message.
+- Shows a list of recent quotes dynamically from the server.
+- Uses a EJS loop to render multiple quotes.
+
+#### Quote Submission (`/share`)
+
+- Provides a form with two fields:
+    - Author name (text input).
+    - Quote text (textarea).
+- Validates input:
+    - Author name must be at least 3 characters.
+    - Quote must not exceed 300 characters.
+- Displays error messages for invalid input.
+- Includes CSRF protection.
+
+#### Search Quotes (`/search`)
+
+- Provides a form to enter an author’s name.
+- Displays all quotes from that author if found.
+- If no quotes are found, shows a message: “No quotes found for author.”
+
+#### Partials and Layouts
+
+
+- Create `_footer.ejs` for page footer.
+- Create `_navbar.ejs` with links to Home, Share, Search.
+- Ensure all pages extend the base layout.
+
+#### Static Assets
+
+- Create `style.css` for consistent styling across all pages.
+- Add an image (e.g., `logo.png`) in the header.
+- Serve CSS and image files through `express.static()`.
