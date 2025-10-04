@@ -122,6 +122,8 @@ Update `app.js` to include the static middleware:
 ```
 const express = require('express');
 const app = express();
+const path = require('path');
+
 const port = 3000;
 
 app.set('view engine', 'ejs');
@@ -427,11 +429,12 @@ module.exports = router;
 
  ```
 The GET (`router.get()`) route displays the contact form by rendering the contact.ejs view and setting submittedName to null, meaning no name has been submitted yet.  
-The POST (`router.postt()`) route processes the form submission. It reads the user’s name and message from req.body, logs the message to the console, and re-renders the contact.ejs view while passing the submitted name to display a confirmation
+The POST (`router.postt()`) route processes the form submission. It reads the user’s name and message from req.body, logs the message to the console, and re-renders the contact.ejs view while passing the submitted name to display a confirmation  
 **`app.js`:**
 ```
 const express = require('express');
 const app = express();
+const path = require('path');
 const port = 3000;
 
 app.set('view engine', 'ejs');
@@ -514,6 +517,7 @@ This setup ensures that **all user input is checked and sanitized** before proce
 ```
 const express = require('express');
 const app = express();
+const path = require('path');
 const port = 3000;
 
 app.set('view engine', 'ejs');
@@ -577,7 +581,7 @@ To defend against CSRF attacks, we use the csurf middleware in Express. It gener
 ```
 npm install csurf
 ```
-Then, configure it on our route:
+Then, configure it on our route:  
 **`routes/contact_csrf`**
 ```
 const express = require('express');
@@ -615,10 +619,12 @@ The **POST route** not only validates the form inputs using `express-validator` 
 If validation fails, the form is re-rendered with error messages and a new CSRF token. If everything is valid, the user’s data is logged, and a confirmation message is displayed.
 
 This setup ensures that **form data is both validated and protected**, keeping the app safe from CSRF attacks and invalid input.  
+
 **`app.js`:**  
 we update the app.js and add the csurf middleware
 ```
 const express = require('express');
+const path = require('path');
 const csrf = require('csurf');
 
 
@@ -641,6 +647,7 @@ app.listen(port, () => {
 });
 ```
 **`views/contact_csrf.ejs`**  
+
 We add hidden input with the csrf token `` <input type="hidden" name="_csrf" value="<%= csrfToken %>">``
 ```
 <%- include('partials/_layout') %>
