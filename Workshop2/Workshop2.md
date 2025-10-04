@@ -580,6 +580,10 @@ To defend against CSRF attacks, we use the csurf middleware in Express. It gener
 ```
 npm install csurf
 ```
+We also need to install ``cookie-parser`` so we store our CSRF secrets in the cookies 
+```
+npm install cookie-parser
+```
 Then, configure it on our route:  
 **`routes/contact_csrf`**
 ```
@@ -625,7 +629,7 @@ we update the app.js and add the csurf middleware
 const express = require('express');
 const path = require('path');
 const csrf = require('csurf');
-
+const cookieParser = require('cookie-parser');
 
 const app = express();
 const port = 3000;
@@ -635,7 +639,8 @@ app.set('views', path.join(__dirname, 'views'));
 app.use(express.static('public'));
 app.use(express.urlencoded({ extended: true }));
 // adding csurf middleware
-const csrfProtection = csrf();
+const csrfProtection = csrf({ cookie: true });
+app.use(cookieParser());
 app.use(csrfProtection);
 
 
@@ -645,6 +650,7 @@ app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
 });
 ```
+We can see that we using `app.use(cookieParser());` so we make Express can’t read that cookie back and verify tokens, and by setting { cookie: true } we tell `csurf` to store CSRF secrets in cookies.
 **`views/contact_csrf.ejs`**  
 
 We add hidden input with the csrf token `` <input type="hidden" name="_csrf" value="<%= csrfToken %>">``
