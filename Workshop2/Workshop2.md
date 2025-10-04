@@ -41,24 +41,62 @@ Then, configure Express to use EJS and create a simple template.
 </body>
 </html>
 ```
+#### The `routes` Folder
+As our application grows, it’s a good practice to organize our routes in a separate folder instead of keeping them all inside `app.js`. This keeps the main file clean and easier to maintain, especially as we add more features.
+
+We’ll create a folder named `routes` in the root directory and move our route logic there. Each file inside this folder will handle a specific set of routes.
+
+```
+my_express_project/
+├── node_modules/     
+├── public/          # For static files, added later
+├── routes/   
+│   └── index.js
+├── views/
+│   └── index.ejs
+├── package.json
+└── app.js
+
+```
+**`routes/index.js`:**
+```
+const express = require('express');
+const router = express.Router();
+
+router.get('/', (req, res) => {
+    res.render('index');
+});
+
+module.exports = router;
+```
+We First import Express and create a router instance using express.Router(). This router works like a mini Express app it can handle routes, middleware, and logic independently.
+
+Then, we define a GET route for '/', which responds by rendering the index.ejs template using res.render('index'). This means when someone visits the homepage, Express will send back the rendered HTML from our EJS file.
+
+Finally, we export the router with module.exports = router; so it can be imported into app.js. There, it’s connected to the main app using app.use('/', indexRoutes);, allowing our defined routes to work within the main application.
+
 **`app.js`:**
 ```
 const express = require('express');
 const app = express();
-const port = 3000;
-
-// Set EJS as the templating engine
+const path = require('path');
+const PORT = 3000;
+// Set EJS as the view engine
 app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
 
-app.get('/', (req, res) => {
-    // Render the index.ejs template (no need to specify .ejs extension)
-    res.render('index');
-});
+// Use routes
+app.use('/', require('./routes/index'));
 
-app.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
+
+app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
 });
 ```
+We first set up the view engine using app.set('view engine', 'ejs'), which tells Express to use EJS for rendering templates. EJS allows us to embed JavaScript into HTML, making it easy to create dynamic pages. Then, with app.set('views', path.join(__dirname, 'views')), we specify that all our template files are stored inside the views folder.
+
+After that, we link our route file using app.use('/', require('./routes/index')). This means any request to the root path (/) will be handled by the routes defined in routes/index.js. Inside that route file, Express will render the appropriate EJS template when a matching route is accessed.  
+
 Run the app with `node app.js`, then visit `http://localhost:3000` in your browser. You’ll see a fully rendered HTML page with a heading and paragraph, instead of just plain text. This is our first step toward building a dynamic web application!
 ### Working with Static Files
 A website isn’t complete without styling, images, or client-side JavaScript. These are called **static files** because they don’t change dynamically like templates do. In Express, we serve static files from a folder (commonly named `public`) using the built-in `express.static` middleware. This makes files like CSS, images, and JavaScript accessible to the browser.  
@@ -70,6 +108,8 @@ my_express_project/
 │   │   └── style.css
 │   └── images/
 │       └── logo.png
+├── routes/   
+│   └── index.js
 ├── views/
 │   └── index.ejs
 ├── package.json
@@ -84,13 +124,13 @@ const app = express();
 const port = 3000;
 
 app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
 
 // Serve static files from the 'public' folder
 app.use(express.static('public'));
 
-app.get('/', (req, res) => {
-    res.render('index');
-});
+app.use('/', require('./routes/index'));
+
 
 app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
@@ -166,7 +206,7 @@ app.use((req, res, next) => {
 });
 ```
 #### Middleware in Our App
-We’ve already used middleware without realizing it! The `express.static('public')` middleware we added earlier is a built-in Express middleware that serves static files. Another common middleware we’ll use later is `body-parser`, which parses form data so we can access it in `req.body`.  
+We’ve already used middleware without realizing it! The `express.static('public')` middleware we added earlier is a built-in Express middleware that serves static files. Another common middleware we’ll use later is `express-validator`, which validate and sanitize user input.  
 Middleware can also be applied to specific routes. For example:
 ```
 const logUserRoute = (req, res, next) => {
@@ -185,7 +225,7 @@ Middleware is what makes Express so flexible. It allows us to:
 - Process requests before they reach routes (e.g., parsing form data).
 - Reuse code across multiple routes or the entire app.
 
-As we proceed with templating and form handling, we’ll use middleware like `body-parser` and `express-validator` to process form submissions and validate data, showing how middleware integrates into real applications.
+As we proceed with templating and form handling, we’ll use middleware like `express-validator` to validate and sanitize user input, showing how middleware integrates into real applications.
 ### Introduction to EJS Templating
 Express uses **EJS** (Embedded JavaScript) as our templating engine, which lets us embed JavaScript code directly in HTML to create dynamic content. EJS is simple yet powerful, allowing us to add variables, conditionals, and loops to our templates.  
 EJS has three key syntaxes:
@@ -197,9 +237,12 @@ EJS has three key syntaxes:
 #### Passing Data to Templates
 We can pass data from our route to the template as an object in `res.render()`. Inside the template, we use JavaScript to display or manipulate this data.  
 Here’s a route that passes user details to a template:  
-**`app.js`:**  
+**`routes/profile.js`:**  
 ```
-app.get('/profile/:name', (req, res) => {
+const express = require('express');
+const router = express.Router();
+
+route.get('/profile/:name', (req, res) => {
     const userDetails = {
         username: req.params.name,
         bio: 'Loves coding in JavaScript and exploring new technologies.',
@@ -207,6 +250,8 @@ app.get('/profile/:name', (req, res) => {
     };
     res.render('profile', { user: userDetails });
 });
+
+module.exports = router;
 ```
 **`views/profile.ejs`:**
 ```
@@ -245,11 +290,16 @@ EJS allows us to add decision-making logic to templates, just like choosing an o
 
 **Example**:  
 Create a dashboard route with different messages based on user status.  
-**`app.js`:**
+**`routes/dashboard .js`:**
 ```
-app.get('/dashboard/:status', (req, res) => {
+const express = require('express');
+const router = express.Router();
+
+router.get('/dashboard/:status', (req, res) => {
     res.render('dashboard', { userStatus: req.params.status });
 });
+
+module.exports = router;
 ```
 **`views/dashboard.ejs`:**
 ```
@@ -276,9 +326,12 @@ EJS loops let us iterate over arrays to display lists, such as tasks, users, or 
 
 **Example**:   
 Create a route to display a task list.
-**`app.js`:**
+**`routes/task.js`:**
 ```
-app.get('/tasks', (req, res) => {
+const express = require('express');
+const router = express.Router();
+
+router.get('/tasks', (req, res) => {
     const taskList = [
         'Buy groceries',
         'Finish Express workshop',
@@ -286,6 +339,7 @@ app.get('/tasks', (req, res) => {
     ];
     res.render('tasks', { tasks: taskList });
 });
+module.exports = router;
 ```
 **`views/tasks.ejs`:**
 ```
@@ -303,7 +357,7 @@ app.get('/tasks', (req, res) => {
 ```
 This renders a bulleted list of tasks or a “no tasks” message if the array is empty. Try setting `taskList = []` in `app.js` to test the empty case.
 ### Template Inheritance
-Most websites share a consistent layout—a header, footer, and navigation bar across all pages. Copying this code into every template is inefficient and hard to maintain. EJS’s `<%- include() %>` lets us create a base layout and reuse it across templates.  
+Most websites share a consistent layout a header, footer, and navigation bar across all pages. Copying this code into every template is inefficient and hard to maintain. EJS’s `<%- include() %>` lets us create a base layout and reuse it across templates.  
 Create a base layout file:  
 **`views/partials/_layout.ejs`:**
 ```
@@ -344,36 +398,49 @@ Update **`views/index.ejs`** to use the layout:
 The `<%- body %>` in `_layout.ejs` is replaced by the content of `index.ejs`. The `<%- %>` tag renders HTML unescaped, allowing the template’s content to be inserted as HTML.
 #### Including Template Snippets with `<%- include %>`  
 While `<%- include %>` is used for layouts, it’s also great for smaller, reusable HTML snippets, like a navigation bar or a card component.  
-In our layout, we already used `<%- include('partials/_navbar') %>` to include the navigation bar. This keeps our code DRY (Don’t Repeat Yourself) and makes updates easier—if we change `_navbar.ejs`, all pages using the layout reflect the change.
+In our layout, we already used `<%- include('partials/_navbar') %>` to include the navigation bar. This keeps our code DRY (Don’t Repeat Yourself) and makes updates easier if we change `_navbar.ejs`, all pages using the layout reflect the change.
 ### Handling HTML Forms
 Forms are the primary way users send data to our server, like submitting a contact message. We’ll explore handling forms manually and with the `express-validator` library for validation.
 #### The Basic HTML Way  
-We’ll create a contact form and process it using the `body-parser` middleware to parse form data into `req.body`.  
-Install `body-parser`:
-```
-npm install body-parser
-```
-**`app.js`:**
-```
+We’ll create a contact form and process it using the express built-in middleware to parse form data into `req.body`.  
+we first start by creating a contact route to display a contact form for the users
+ **`routes/contact.js`**
+ ```
 const express = require('express');
-const bodyParser = require('body-parser');
-const app = express();
-const port = 3000;
+const router = express.Router();
 
-app.set('view engine', 'ejs');
-app.use(express.static('public'));
-app.use(bodyParser.urlencoded({ extended: true }));
-
-app.get('/contact', (req, res) => {
+// GET route to display the contact form
+router.get('/', (req, res) => {
     res.render('contact', { submittedName: null });
 });
 
-app.post('/contact', (req, res) => {
+// POST route to handle form submission
+router.post('/', (req, res) => {
     const name = req.body.name;
     const message = req.body.message;
     console.log(`Received message from ${name}: ${message}`);
     res.render('contact', { submittedName: name });
 });
+
+module.exports = router;
+
+ ```
+The GET (`router.get()`) route displays the contact form by rendering the contact.ejs view and setting submittedName to null, meaning no name has been submitted yet.  
+The POST (`router.postt()`) route processes the form submission. It reads the user’s name and message from req.body, logs the message to the console, and re-renders the contact.ejs view while passing the submitted name to display a confirmation
+**`app.js`:**
+```
+const express = require('express');
+const app = express();
+const port = 3000;
+
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
+
+app.use(express.static('public'));
+app.use(express.urlencoded({ extended: true }));  // To parse URL-encoded form data
+
+app.use('/contact', require('./routes/contact'));
+
 
 app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
@@ -394,29 +461,25 @@ app.listen(port, () => {
     <h2>Thanks for your message, <%= submittedName %>!</h2>
 <% } %>
 ```
-The `body-parser` middleware parses URL-encoded form data into `req.body`. The `GET` route displays the form, and the `POST` route processes the submission, logging the data and re-rendering the form with a confirmation message.
+The line app.use(express.urlencoded({ extended: true })) allows Express to parse form data that users submit through an HTML form. When a form is sent using the POST method, the data arrives in a URL-encoded format (for example, name=John&age=25). This middleware converts that data into a JavaScript object and stores it in req.body, so we can easily access it in our routes.
 #### The express-validator Way
 Manual form handling is straightforward but can be error-prone for validation and security. The `express-validator` library simplifies form validation and sanitization, offering a robust alternative to manual checks.  
 Install `express-validator`:
 ```
 npm install express-validator
 ```
-**`app.js`:**
+**`routes/contact-val.js`**
+The new route for validated form become: 
 ```
 const express = require('express');
-const bodyParser = require('body-parser');
+const router = express.Router();
 const { body, validationResult } = require('express-validator');
-const app = express();
-const port = 3000;
-
-app.set('view engine', 'ejs');
-app.use(express.static('public'));
-app.use(bodyParser.urlencoded({ extended: true }));
-
+// GET route to display the contact form
 app.get('/contact-val', (req, res) => {
     res.render('contact_val', { errors: [], submittedName: null });
 });
 
+// POST route to handle form submission
 app.post('/contact-val', [
     body('name').notEmpty().withMessage('Name is required').trim().isLength({ min: 3, max: 25 }).withMessage('Name must be 3-25 characters'),
     body('message').notEmpty().withMessage('Message is required').trim().isLength({ max: 200 }).withMessage('Message must be under 200 characters'),
@@ -430,6 +493,33 @@ app.post('/contact-val', [
     console.log(`Received from ${name}: ${message}`);
     res.render('contact_val', { errors: [], submittedName: name });
 });
+
+module.exports = router;
+```
+The **GET route** displays the form by rendering the `contact_val.ejs` view, initializing `errors` as an empty array and `submittedName` as `null`. This means no errors or submitted data are shown initially.
+
+The **POST route** uses an array of **validation rules** before the route handler runs. Each `body()` check validates and sanitizes a specific field:
+- `name` must not be empty, trimmed, and between 3–25 characters.
+- `message` must not be empty, trimmed, and no longer than 200 characters.
+- `email` must be in a valid email format and normalized.
+    
+
+Inside the route handler, `validationResult(req)` collects any validation errors. If errors exist, the form is re-rendered with the `errors` array so the user can see what went wrong.
+
+If the data passes validation, the input is read from `req.body`, logged to the console, and the form is re-rendered showing the submitted name as confirmation.
+
+This setup ensures that **all user input is checked and sanitized** before processing, keeping the app secure and user-friendly.  
+**`app.js`:**
+```
+const express = require('express');
+const app = express();
+const port = 3000;
+
+app.set('view engine', 'ejs');
+app.use(express.static('public'));
+app.use(express.urlencoded({ extended: true }));
+
+app.use('/contact-val', require('./routes/contact-val'));
 
 app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
@@ -476,7 +566,8 @@ app.listen(port, () => {
 - **Error Handling**: Provides clear error messages for display in templates.
 - **Security**: Reduces risks like injection by sanitizing inputs.
 
-**Note on CSRF**: `express-validator` doesn’t include CSRF protection by default. For production apps, add the `csurf` middleware:
+### Adding CSRF protection:  
+`express-validator` doesn’t include CSRF protection by default. For production apps, add the `csurf` middleware:
 ```
 npm install csurf
 ```
