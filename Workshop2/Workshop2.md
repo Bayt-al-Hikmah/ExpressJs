@@ -1,14 +1,15 @@
-### Objectives
+## Objectives
 - Render HTML templates instead of simple strings or JSON.
 - Serve static files like CSS and images.
 - Understand and use Express middleware to process requests.
 - Use the EJS templating engine for dynamic content (variables, loops, conditions).
 - Create reusable page layouts with template inheritance.
 - Handle user input with HTML forms, both manually and with the express-validator library.
-### Rendering Basic HTML Templates
+- Add CSRF Protection to our forms
+## Rendering Basic HTML Templates
 In our previous session, we returned simple strings and JSON from our routes. While that's perfect for APIs, most web applications need to display rich, structured content to users, like styled web pages with dynamic data. To achieve this, we use HTML templates.  
 A template is an HTML file where we can embed dynamic data before sending it to the user's browser. This approach keeps our application's logic (written in JavaScript) separate from its presentation (written in HTML), making our code cleaner, easier to maintain, and more scalable.
-#### The `views` Folder
+### The `views` Folder
 Express doesn’t enforce a specific folder for templates, but it’s standard practice to store them in a folder called `views`. This folder should be in the root directory of our project, alongside our `app.js` file.  
 Our project structure should now look like this:
 ```
@@ -20,7 +21,7 @@ my_express_project/
 ├── package.json
 └── app.js
 ```
-#### Using `res.render()`
+### Using `res.render()`
 To serve an HTML template, we use Express’s `res.render()` method. First, we need to set up a templating engine. For this lecture, we’ll use **EJS** (Embedded JavaScript), a popular and lightweight templating engine that integrates seamlessly with Express. EJS lets us embed JavaScript directly in our HTML files to create dynamic content.  
 To get started, install EJS:
 ```
@@ -41,7 +42,7 @@ Then, configure Express to use EJS and create a simple template.
 </body>
 </html>
 ```
-#### The `routes` Folder
+### The `routes` Folder
 As our application grows, it’s a good practice to organize our routes in a separate folder instead of keeping them all inside `app.js`. This keeps the main file clean and easier to maintain, especially as we add more features.
 
 We’ll create a folder named `routes` in the root directory and move our route logic there. Each file inside this folder will handle a specific set of routes.
@@ -98,7 +99,7 @@ We first set up the view engine using app.set('view engine', 'ejs'), which tells
 After that, we link our route file using app.use('/', require('./routes/index')). This means any request to the root path (/) will be handled by the routes defined in routes/index.js. Inside that route file, Express will render the appropriate EJS template when a matching route is accessed.  
 
 Run the app with `node app.js`, then visit `http://localhost:3000` in your browser. You’ll see a fully rendered HTML page with a heading and paragraph, instead of just plain text. This is our first step toward building a dynamic web application!
-### Working with Static Files
+## Working with Static Files
 A website isn’t complete without styling, images, or client-side JavaScript. These are called **static files** because they don’t change dynamically like templates do. In Express, we serve static files from a folder (commonly named `public`) using the built-in `express.static` middleware. This makes files like CSS, images, and JavaScript accessible to the browser.  
 Our updated project structure:
 ```
@@ -115,7 +116,7 @@ my_express_project/
 ├── package.json
 └── app.js
 ```
-#### Serving Static Files
+### Serving Static Files
 To serve static files, we use the `express.static` middleware in `app.js`. This middleware tells Express to make all files in the `public` folder available at URLs relative to the folder. For example, `public/css/style.css` becomes accessible at `/css/style.css`.  
 Update `app.js` to include the static middleware:
 ```
@@ -169,16 +170,16 @@ Update **`views/index.ejs`** to include the CSS and an image:
 </html>
 ```
 Restart the server and visit `http://localhost:3000`. The page will now be styled, and the image (assuming `logo.png` exists in `public/images/`) will display. If the image or CSS file is missing, you’ll see a broken image icon or unstyled content, so ensure the files are in place.
-#### Why Use `express.static`?
+### Why Use `express.static`?
 Using `app.use(express.static('public'))` is the recommended way to serve static files because:
 1. **Automatic Path Resolution**: Express adjusts file paths based on the app’s deployment context. For example, if deployed to `https://example.com/my-app/`, URLs like `/css/style.css` correctly resolve to `/my-app/css/style.css`.
 2. **Simplicity**: No need to write routes for each static file; Express serves everything in `public` automatically.
 3. **Efficiency**: Express optimizes static file delivery with features like caching support.
 
 This approach ensures our static assets are served reliably across different environments, whether on a local machine or a production server.
-### Understanding Express Middleware
+## Understanding Express Middleware
 Before we dive into dynamic templating, let’s explore **middleware**, a fundamental concept in Express that powers much of its functionality. Middleware functions are the backbone of how Express processes requests and responses, and understanding them is key to building robust applications.
-#### What is Middleware?
+### What is Middleware?
 Middleware functions are JavaScript functions that sit between the incoming request and the final response. They have access to the request object (`req`), the response object (`res`), and the `next` function, which passes control to the next middleware or route handler in the chain. Middleware can:
 
 - Modify the request or response objects.
@@ -187,7 +188,7 @@ Middleware functions are JavaScript functions that sit between the incoming requ
 - Call `next()` to pass control to the next middleware.
 
 Think of middleware as a pipeline: each request flows through a series of middleware functions before reaching the route handler (or being sent back to the client).
-#### How Middleware Works
+### How Middleware Works
 Middleware is added using `app.use()` for global middleware (applied to all routes) or as an array of functions for specific routes. Each middleware function can process the request, modify data, or stop the pipeline early by sending a response.  
 Here’s a simple example of custom middleware that logs the request method and URL:
 ```
@@ -205,7 +206,7 @@ app.use((req, res, next) => {
     next();
 });
 ```
-#### Middleware in Our App
+### Middleware in Our App
 We’ve already used middleware without realizing it! The `express.static('public')` middleware we added earlier is a built-in Express middleware that serves static files. Another common middleware we’ll use later is `express-validator`, which validate and sanitize user input.  
 Middleware can also be applied to specific routes. For example:
 ```
@@ -219,14 +220,14 @@ app.get('/profile/:name', logUserRoute, (req, res) => {
 });
 ```
 Here, `logUserRoute` only runs for the `/profile/:name` route, logging the accessed username before rendering the template.
-#### Why Middleware Matters
+### Why Middleware Matters
 Middleware is what makes Express so flexible. It allows us to:
 - Add cross-cutting functionality like logging, authentication, or error handling.
 - Process requests before they reach routes (e.g., parsing form data).
 - Reuse code across multiple routes or the entire app.
 
 As we proceed with templating and form handling, we’ll use middleware like `express-validator` to validate and sanitize user input, showing how middleware integrates into real applications.
-### Introduction to EJS Templating
+## Introduction to EJS Templating
 Express uses **EJS** (Embedded JavaScript) as our templating engine, which lets us embed JavaScript code directly in HTML to create dynamic content. EJS is simple yet powerful, allowing us to add variables, conditionals, and loops to our templates.  
 EJS has three key syntaxes:
 
@@ -234,7 +235,7 @@ EJS has three key syntaxes:
 - `<%- ... %>`: Outputs unescaped data (e.g., for raw HTML, use with caution).
 - `<% ... %>`: For control structures like `if` statements and `forEach` loops.
 
-#### Passing Data to Templates
+### Passing Data to Templates
 We can pass data from our route to the template as an object in `res.render()`. Inside the template, we use JavaScript to display or manipulate this data.  
 Here’s a route that passes user details to a template:  
 **`routes/profile.js`:**  
@@ -280,7 +281,7 @@ module.exports = router;
 </html>
 ```
 Visit `/profile/alice` to see a page with Alice’s capitalized name, bio, and shopping list. The `charAt(0).toUpperCase() + slice(1)` mimics a capitalize function, showing how JavaScript can transform data in templates.
-#### Conditional Statements (`if`, `else`)
+### Conditional Statements (`if`, `else`)
 EJS allows us to add decision-making logic to templates, just like choosing an outfit based on the weather. We can show different content based on the data passed from our route.   
 **How It Works**:
 - `<% if (condition) { %>`: Checks if a condition is true.
@@ -318,7 +319,7 @@ module.exports = router;
 </div>
 ```
 Visit `/dashboard/admin`, `/dashboard/member`, or `/dashboard/visitor` to see the appropriate message based on the status.
-#### Loops (`forEach`)
+### Loops (`forEach`)
 EJS loops let us iterate over arrays to display lists, such as tasks, users, or products.  
 **How It Works**:
 - `<% array.forEach(item => { %> ... <% }); %>`: Iterates over `array`, with each item available as `item`.
@@ -396,12 +397,12 @@ Update **`views/index.ejs`** to use the layout:
 <p>This page was rendered from an Express template and uses a base layout.</p>
 ```
 The `<%- body %>` in `_layout.ejs` is replaced by the content of `index.ejs`. The `<%- %>` tag renders HTML unescaped, allowing the template’s content to be inserted as HTML.
-#### Including Template Snippets with `<%- include %>`  
+### Including Template Snippets with `<%- include %>`  
 While `<%- include %>` is used for layouts, it’s also great for smaller, reusable HTML snippets, like a navigation bar or a card component.  
 In our layout, we already used `<%- include('partials/_navbar') %>` to include the navigation bar. This keeps our code DRY (Don’t Repeat Yourself) and makes updates easier if we change `_navbar.ejs`, all pages using the layout reflect the change.
-### Handling HTML Forms
+## Handling HTML Forms
 Forms are the primary way users send data to our server, like submitting a contact message. We’ll explore handling forms manually and with the `express-validator` library for validation.
-#### The Basic HTML Way  
+### The Basic HTML Way  
 We’ll create a contact form and process it using the express built-in middleware to parse form data into `req.body`.  
 we first start by creating a contact route to display a contact form for the users
  **`routes/contact.js`**
@@ -462,7 +463,7 @@ app.listen(port, () => {
 <% } %>
 ```
 The line app.use(express.urlencoded({ extended: true })) allows Express to parse form data that users submit through an HTML form. When a form is sent using the POST method, the data arrives in a URL-encoded format (for example, name=John&age=25). This middleware converts that data into a JavaScript object and stores it in req.body, so we can easily access it in our routes.
-#### The express-validator Way
+### The express-validator Way
 Manual form handling is straightforward but can be error-prone for validation and security. The `express-validator` library simplifies form validation and sanitization, offering a robust alternative to manual checks.  
 Install `express-validator`:
 ```
