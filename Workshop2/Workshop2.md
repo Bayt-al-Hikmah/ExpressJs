@@ -121,11 +121,10 @@ To serve static files, we use the `express.static` middleware in `app.js`. This 
 Update `app.js` to include the static middleware:
 ```
 const express = require('express');
-const app = express();
 const path = require('path');
 
 const port = 3000;
-
+const app = express();
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
@@ -306,7 +305,7 @@ module.exports = router;
 ```
 **`views/dashboard.ejs`:**
 ```
-<%- include('partials/_layout') %>
+<%- include('partials/_navbar') %>
 <div class="welcome-message">
     <% if (userStatus === 'admin') { %>
         <h1>Welcome, Administrator!</h1>
@@ -319,6 +318,7 @@ module.exports = router;
         <p>Please sign up or log in to access member features.</p>
     <% } %>
 </div>
+<%- include('partials/_footer') %>
 ```
 Visit `/dashboard/admin`, `/dashboard/member`, or `/dashboard/visitor` to see the appropriate message based on the status.
 ### Loops (`forEach`)
@@ -346,7 +346,7 @@ module.exports = router;
 ```
 **`views/tasks.ejs`:**
 ```
-<%- include('partials/_layout') %>
+<%- include('partials/_navbar') %>
 <h1>My To-Do List</h1>
 <ul>
     <% if (tasks.length > 0) { %>
@@ -357,12 +357,13 @@ module.exports = router;
         <li>You have no tasks. Great job!</li>
     <% } %>
 </ul>
+<%- include('partials/_footer') %>
 ```
 This renders a bulleted list of tasks or a “no tasks” message if the array is empty. Try setting `taskList = []` in `app.js` to test the empty case.
 ### Template Inheritance
 Most websites share a consistent layout a header, footer, and navigation bar across all pages. Copying this code into every template is inefficient and hard to maintain. EJS’s `<%- include() %>` lets us create a base layout and reuse it across templates.  
-Create a base layout file:  
-**`views/partials/_layout.ejs`:**
+Create a base navbar and footer file:  
+**`views/partials/_navbar.ejs`:**
 ```
 <!DOCTYPE html>
 <html lang="en">
@@ -373,10 +374,16 @@ Create a base layout file:
 </head>
 <body>
     <header>
-        <%- include('partials/_navbar') %>
+       <nav>
+    <a href="/">Home</a> |
+    <a href="#">About</a> |
+    <a href="#">Contact</a>
+</nav>
     </header>
     <main>
-        <%- body %>
+```
+**`views/partials/_footer.ejs`:**
+```
     </main>
     <footer>
         <p>&copy; 2025 Our Company</p>
@@ -384,24 +391,14 @@ Create a base layout file:
 </body>
 </html>
 ```
-**`views/partials/_navbar.ejs`:**
+Update **`views/index.ejs`** to use the navbar and footer:
 ```
-<nav>
-    <a href="/">Home</a> |
-    <a href="#">About</a> |
-    <a href="#">Contact</a>
-</nav>
-```
-Update **`views/index.ejs`** to use the layout:
-```
-<%- include('partials/_layout') %>
+<%- include('partials/_navbar') %>
 <h1>Welcome to Our Website!</h1>
 <p>This page was rendered from an Express template and uses a base layout.</p>
+<%- include('partials/_footer') %>
 ```
-The `<%- body %>` in `_layout.ejs` is replaced by the content of `index.ejs`. The `<%- %>` tag renders HTML unescaped, allowing the template’s content to be inserted as HTML.
-### Including Template Snippets with `<%- include %>`  
-While `<%- include %>` is used for layouts, it’s also great for smaller, reusable HTML snippets, like a navigation bar or a card component.  
-In our layout, we already used `<%- include('partials/_navbar') %>` to include the navigation bar. This keeps our code DRY (Don’t Repeat Yourself) and makes updates easier if we change `_navbar.ejs`, all pages using the layout reflect the change.
+The `<%- include('partials/_navbar') %>` and `<%- include('partials/_footer') %>` in `index.ejs` is replaced by the content of `_navbar.ejs` and `_footer.ejs`.This keeps our code DRY (Don’t Repeat Yourself) and makes updates easier if we change `_navbar.ejs` and `_footer.ejs`, all pages using them reflect the change.
 ## Handling HTML Forms
 Forms are the primary way users send data to our server, like submitting a contact message. We’ll explore handling forms manually and with the `express-validator` library for validation.
 ### The Basic HTML Way  
@@ -452,7 +449,7 @@ app.listen(port, () => {
 ```
 **`views/contact.ejs`:**
 ```
-<%- include('partials/_layout') %>
+<%- include('partials/_navbar') %>
 <h1>Contact Us</h1>
 <form action="/contact" method="POST">
     <label for="name">Name:</label><br>
@@ -464,6 +461,7 @@ app.listen(port, () => {
 <% if (submittedName) { %>
     <h2>Thanks for your message, <%= submittedName %>!</h2>
 <% } %>
+<%- include('partials/_footer') %>
 ```
 The line app.use(express.urlencoded({ extended: true })) allows Express to parse form data that users submit through an HTML form. When a form is sent using the POST method, the data arrives in a URL-encoded format (for example, name=John&age=25). This middleware converts that data into a JavaScript object and stores it in req.body, so we can easily access it in our routes.
 ### The express-validator Way
@@ -533,7 +531,7 @@ app.listen(port, () => {
 ```
 **`views/contact_val.ejs`:**
 ```
-<%- include('partials/_layout') %>
+<%- include('partials/_navbar') %>
 <h1>Contact Us (Validated)</h1>
 <form method="POST" action="/contact_val">
     <label for="name">Name:</label><br>
@@ -565,6 +563,7 @@ app.listen(port, () => {
 <% if (submittedName && errors.length === 0) { %>
     <h2>Thanks for your message, <%= submittedName %>!</h2>
 <% } %>
+<%- include('partials/_footer') %>
 ```
 #### Why Use express-validator?
 - **Validation**: Ensures fields meet rules (e.g., `notEmpty()`, `isEmail()`, `isLength()`).
@@ -650,7 +649,7 @@ app.listen(port, () => {
 
 We add hidden input with the csrf token `` <input type="hidden" name="_csrf" value="<%= csrfToken %>">``
 ```
-<%- include('partials/_layout') %>
+<%- include('partials/_navbar') %>
 <h1>Contact Us (CSRF Protected)</h1>
 <form method="POST" action="/contact_csrf">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
@@ -683,4 +682,5 @@ We add hidden input with the csrf token `` <input type="hidden" name="_csrf" val
 <% if (submittedName && errors.length === 0) { %>
     <h2>Thanks for your message, <%= submittedName %>!</h2>
 <% } %>
+<%- include('partials/_footer') %>
 ```
