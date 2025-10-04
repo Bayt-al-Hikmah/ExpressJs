@@ -650,7 +650,8 @@ app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
 });
 ```
-We can see that we using `app.use(cookieParser());` so we make Express can’t read that cookie back and verify tokens, and by setting { cookie: true } we tell `csurf` to store CSRF secrets in cookies.
+We can see that we using `app.use(cookieParser());` so we make Express can’t read that cookie back and verify tokens, and by setting { cookie: true } we tell `csurf` to store CSRF secrets in cookies.  
+
 **`views/contact_csrf.ejs`**  
 
 We add hidden input with the csrf token `` <input type="hidden" name="_csrf" value="<%= csrfToken %>">``
