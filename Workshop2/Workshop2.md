@@ -468,7 +468,7 @@ Install `express-validator`:
 ```
 npm install express-validator
 ```
-**`routes/contact-val.js`**
+**`routes/contact_val.js`**
 The new route for validated form become: 
 ```
 const express = require('express');
@@ -516,10 +516,11 @@ const app = express();
 const port = 3000;
 
 app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
 app.use(express.static('public'));
 app.use(express.urlencoded({ extended: true }));
 
-app.use('/contact-val', require('./routes/contact-val'));
+app.use('/contact_val', require('./routes/contact-val'));
 
 app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
@@ -529,7 +530,7 @@ app.listen(port, () => {
 ```
 <%- include('partials/_layout') %>
 <h1>Contact Us (Validated)</h1>
-<form method="POST" action="/contact-val">
+<form method="POST" action="/contact_val">
     <label for="name">Name:</label><br>
     <input type="text" id="name" name="name" value="<%= submittedName || '' %>"><br>
     <% errors.forEach(error => { %>
@@ -566,17 +567,112 @@ app.listen(port, () => {
 - **Error Handling**: Provides clear error messages for display in templates.
 - **Security**: Reduces risks like injection by sanitizing inputs.
 
-### Adding CSRF protection:  
-`express-validator` doesn’t include CSRF protection by default. For production apps, add the `csurf` middleware:
+### Adding CSRF protection: 
+CSRF (Cross-Site Request Forgery) is a type of web attack where a malicious site tricks a user’s browser into performing unwanted actions on another site where the user is authenticated.
+
+For example, if a user is logged into a banking site, a CSRF attack could make their browser unknowingly submit a request to transfer money without their consent. The attacker exploits the trust the site has in the user’s browser session.
+
+To defend against CSRF attacks, we use the csurf middleware in Express. It generates a unique CSRF token for each session or form request. This token must be included in all POST, PUT, or DELETE requests. The server checks the token and rejects any request without a valid one, preventing malicious cross-site submissions.
 ```
 npm install csurf
 ```
-Then, configure it:
+Then, configure it on our route:
+**`routes/contact_csrf`**
 ```
-const csurf = require('csurf');
-app.use(csurf());
+const express = require('express');
+const router = express.Router();
+
+const { body, validationResult } = require('express-validator');
+
+
+// GET route to show the contact form
+router.get('/', (req, res) => {
+    res.render('contact_csrf', { errors: [],csrfToken: req.csrfToken(), submittedName: null });
+});
+
+// POST route to handle form submission
+router.post('/',[
+    body('name').notEmpty().withMessage('Name is required').trim().isLength({ min: 3, max: 25 }).withMessage('Name must be 3-25 characters'),
+    body('message').notEmpty().withMessage('Message is required').trim().isLength({ max: 200 }).withMessage('Message must be under 200 characters'),
+    body('email').isEmail().withMessage('Invalid email format').normalizeEmail()
+], (req, res) => {
+    const { name, message } = req.body;
+    console.log(`Received message from ${name}: ${message}`);
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.render('contact_csrf', { errors: errors.array(), csrfToken: req.csrfToken(), submittedName: null });
+    }
+    res.render('contact_csrf', { errors:[], csrfToken: req.csrfToken(), submittedName: name });
+});
+
+module.exports = router;
 ```
-Add a CSRF token to forms:
+This route adds both **form validation** and **CSRF protection** to the contact form. The **GET route** renders the form and includes a unique CSRF token using `req.csrfToken()`. This token is added as a hidden field inside the form, ensuring that only genuine submissions from our website are accepted.
+
+The **POST route** not only validates the form inputs using `express-validator` checking that the name, message, and email meet the required rules but also verifies the CSRF token automatically through the `csurf` middleware. When the form is submitted, the token sent with it is compared to the one stored on the server. If they match, the request is trusted and processed. If not, it’s rejected to prevent any malicious submission.
+
+If validation fails, the form is re-rendered with error messages and a new CSRF token. If everything is valid, the user’s data is logged, and a confirmation message is displayed.
+
+This setup ensures that **form data is both validated and protected**, keeping the app safe from CSRF attacks and invalid input.  
+**`app.js`:**  
+we update the app.js and add the csurf middleware
 ```
-<input type="hidden" name="_csrf" value="<%= csrfToken %>">
+const express = require('express');
+const csrf = require('csurf');
+
+
+const app = express();
+const port = 3000;
+
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
+app.use(express.static('public'));
+app.use(express.urlencoded({ extended: true }));
+// adding csurf middleware
+const csrfProtection = csrf();
+app.use(csrfProtection);
+
+
+app.use('/contact_csrf', require('./routes/contact_csrf'));
+
+app.listen(port, () => {
+    console.log(`Server running at http://localhost:${port}`);
+});
+```
+**`views/contact_csrf.ejs`**  
+We add hidden input with the csrf token `` <input type="hidden" name="_csrf" value="<%= csrfToken %>">``
+```
+<%- include('partials/_layout') %>
+<h1>Contact Us (CSRF Protected)</h1>
+<form method="POST" action="/contact_csrf">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <label for="name">Name:</label><br>
+    <input type="text" id="name" name="name" value="<%= submittedName || '' %>"><br>
+    <% errors.forEach(error => { %>
+        <% if (error.param === 'name') { %>
+            <span style="color:red;"><%= error.msg %></span><br>
+        <% } %>
+    <% }) %>
+
+    <label for="email">Email:</label><br>
+    <input type="email" id="email" name="email"><br>
+    <% errors.forEach(error => { %>
+        <% if (error.param === 'email') { %>
+            <span style="color:red;"><%= error.msg %></span><br>
+        <% } %>
+    <% }) %>
+
+    <label for="message">Message:</label><br>
+    <textarea id="message" name="message"></textarea><br>
+    <% errors.forEach(error => { %>
+        <% if (error.param === 'message') { %>
+            <span style="color:red;"><%= error.msg %></span><br>
+        <% } %>
+    <% }) %>
+
+    <button type="submit">Submit</button>
+</form>
+<% if (submittedName && errors.length === 0) { %>
+    <h2>Thanks for your message, <%= submittedName %>!</h2>
+<% } %>
 ```
