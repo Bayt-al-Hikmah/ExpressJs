@@ -537,6 +537,17 @@ To prevent these risks, we configure iron-session with strict cookie and encrypt
 - **`password`** → encrypts and signs session data so it cannot be tampered with or decrypted without the secret key.
 
 This main file sets up the Express app, configures the view engine (EJS for dynamic HTML), serves static files from 'public', initializes sessions, and parses URL-encoded form data. Routes are mounted, and the root route renders an index page with session-based username and messages. The server listens on port 3000, a common development port.
+### Environment Variables
+Environment variables are used to store sensitive configuration data outside your source code, keeping your application both secure and flexible.
+
+In this project, the session’s secret key is stored in an environment variable named SESSION_SECRET.  
+We create a file called .env and define our variables inside it:
+**``.env``**
+```
+SESSION_SECRET=your-very-secure-random-key
+NODE_ENV=development
+```
+The line ``require('dotenv').config();`` loads these environment variables from the .env file and makes them accessible in our application through ``process.env``.
 
 ## Rich Text and Pages
 
@@ -816,21 +827,17 @@ This router handles profile viewing and updating. Multer's `single` method proce
 The form uses `enctype="multipart/form-data"` to support file uploads. Conditional rendering shows the avatar if available. The `enctype="multipart/form-data"` attribute is crucial for file uploads. `multer` sanitizes and saves files securely, and the `fileFilter` ensures only images are accepted.
 
 ## A Journey Through CSS Styling
-
-Our wiki app is functional, but its appearance could use some polish. Let’s explore how CSS has evolved to make styling more efficient and maintainable. CSS evolution reflects the need for scalable, maintainable stylesheets as web apps grow complex. From ad-hoc classes to systematic frameworks, each stage addresses pain points like duplication and specificity wars.
-
 ### Act I: The Specific Approach (Class-per-Element)
+When we first begin styling our web pages, the natural instinct is to give each element its own class and style it directly. For example:
 
-When starting with CSS, it’s tempting to create a unique class for each element. For example, a login button might have a class `.login-page-button` with all its styles defined explicitly. This approach is straightforward for small projects but leads to bloated stylesheets. Each element gets tailored styles, often resulting in copied code when similar elements appear elsewhere.
-
-**`public/style.css` (example):**
+**Example CSS (not used in our app):**
 
 ```css
 .login-page-button {
-    background-color: blue;
-    color: white;
-    padding: 10px 20px;
-    border-radius: 5px;
+  background-color: blue;
+  color: white;
+  padding: 10px 20px;
+  border-radius: 5px;
 }
 ```
 
@@ -840,47 +847,99 @@ When starting with CSS, it’s tempting to create a unique class for each elemen
 <button class="login-page-button">Login</button>
 ```
 
-**Problem**: If we need a similar button on the register page, we’d create `.register-page-button` and duplicate the styles. This violates DRY (Don’t Repeat Yourself) principles, making maintenance difficult. Updating a common style, like changing padding, requires editing multiple classes, increasing error risk.
+At first, this feels simple and organized every element gets its own “label,” and we know exactly where its style lives.
+
+But very quickly, a problem appears:
+
+- The Register button will need almost the same styles as the Login button.
+    
+- Input fields across different pages also share similar styling.
+    
+- Suddenly, we’re copying and pasting the same rules over and over.
+    
+
+This creates duplication and makes our CSS harder to maintain. Imagine having 5 different button classes scattered around your project if you want to change the padding, you’d need to edit all of them.
+
+To fix this, we need to step back and notice patterns. Many elements aren’t unique snowflakes they belong to the same component family. Buttons share common traits, inputs share common traits. Instead of treating them as separate cases, we can extract those shared features and place them into special reusable classes.
+
+This shift in thinking is what leads us toward the reusable component approach in Act II.
 
 ### Act II: The Reusable Component (Shared Classes)
 
-To avoid repetition, we create reusable **component classes**. A `.btn` class defines common button styles, and a `.btn-primary` class adds specific colors. Component-based styling, popularized by libraries like Bootstrap, treats UI elements as building blocks. Base classes handle structure, modifiers add variations, promoting consistency across the app.
+To fix the duplication problem from Act I, we need to change how we see our elements. Instead of thinking about each button or input as a one-off element, we treat them as components.  
+A component is simply a reusable piece of UI like a button, an input box, or a card. Each component has a base style that defines its common features. For example, all buttons might share padding, border-radius, and font weight.  
+On top of that, we can add variations (or modifiers) that adjust the base style like giving one button a blue background (.btn-primary) and another a gray background (.btn-secondary).  
+This way, our CSS is not about styling individual elements, but about describing what type of component the element is. When we create new elements in our HTML, we don’t invent a new class each time we simply apply the right combination of existing component classes.  
+Here’s what that looks like in practice:
 
-**`public/style.css` (example):**
+**Our `style.css` (already implemented):**
 
 ```css
 .btn {
-    padding: 10px 20px;
-    border-radius: 5px;
+  padding: 9px 14px;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
 }
 .btn-primary {
-    background-color: blue;
-    color: white;
+  background: var(--accent);
+  color: white;
+  border-color: rgba(43,124,255,0.1);
 }
 ```
 
-**HTML:**
+**HTML in Templates:**
 
 ```html
-<button class="btn btn-primary">Login</button>
 <button class="btn btn-primary">Register</button>
 ```
 
-This approach, used by frameworks like Bootstrap, keeps styles DRY and makes updates easier by centralizing component styles. Changes propagate automatically, and it's easier to theme the app by swapping modifier classes.
+This is exactly the approach that **Bootstrap** and other frameworks popularized. They provide base classes (`.btn`, `.form-control`, `.card`) and variations (`.btn-primary`, `.btn-danger`, `.btn-outline`), letting developers build entire UIs just by combining classes.
 
 ### Act III: The Utility-First Revolution
 
-Utility-first frameworks like **Tailwind CSS** take reusability further by providing single-purpose classes for individual CSS properties:
+The component approach from Act II is a big improvement over one-class-per-element, but it isn’t perfect. Components come with predefined styles for things like padding, margin, and borders.  
+But what if you need a button with slightly less padding? Or an input field with a custom margin? Suddenly, we’re stuck. we either:
 
-- `bg-blue-500`: Sets background color.
-- `text-white`: Sets text color.
-- `p-4`: Sets padding.
-- `rounded-md`: Sets border-radius.
+- Override the existing class (which feels messy), or
+    
+- Create a brand-new variation (like .btn-small or .btn-wide) amnd before long, we’re back to the duplication problem from Act I.
+    
 
-Utility classes shift composition to HTML, reducing custom CSS needs. This speeds up development for prototypes and maintains flexibility without overriding styles. Instead of defining components, we combine these utilities directly in HTML, building styles on the fly. This creates a flexible, maintainable styling system without custom CSS for every component. Tailwind also includes tools for purging unused classes in production, keeping bundles small. It's ideal for custom designs without framework lock-in.
+To solve this, a new idea emerged: instead of making classes for components, why not make classes for single styling functions?
 
-**Example (with Tailwind classes):**
+For example:
+
+- p-4 → padding
+    
+- m-10 → margin
+    
+- text-lg → font size
+    
+- bg-blue-500 → background color
+    
+
+With this approach, we’re not writing CSS to describe components—we’re building components directly in the HTML by stacking utility classes together.
+
+This is the philosophy behind utility-first frameworks like Tailwind CSS.
+
+**Example with Tailwind (hypothetical):**
 
 ```html
-<button class="bg-blue-500 text-white p-4 rounded-md">Login</button>
+<button class="bg-blue-500 text-white p-4 rounded-md">Register</button>
 ```
+
+Here, every class is doing one small job: background, text color, padding, border radius. Together, they form a complete button. It’s like snapping LEGO bricks together each brick is tiny and simple, but combined, they make something powerful.
+
+This approach has huge benefits:
+
+- No need for CSS overrides we control spacing, sizing, and colors directly in the markup.
+    
+- Less CSS file bloat → most styles come from the framework.
+    
+- Faster prototyping we can build and tweak designs instantly without creating new CSS classes.
+    
+
+However, it does come with one small drawback: your HTML can look crowded with classes. A single element may end up with 6–10 classes, which feels like “class spam.” Some developers love this tradeoff, others find it messy.
