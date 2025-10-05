@@ -403,7 +403,7 @@ The `<%- include('partials/_navbar') %>` and `<%- include('partials/_footer') %>
 Forms are the primary way users send data to our server, like submitting a contact message. We’ll explore handling forms manually and with the `express-validator` library for validation.
 ### The Basic HTML Way  
 We’ll create a contact form and process it using the express built-in middleware to parse form data into `req.body`.  
-we first start by creating a contact route to display a contact form for the users
+we first start by creating a contact route to display a contact form for the users.  
  **`routes/contact.js`**
  ```
 const express = require('express');
@@ -426,7 +426,7 @@ module.exports = router;
 
  ```
 The GET (`router.get()`) route displays the contact form by rendering the contact.ejs view and setting submittedName to null, meaning no name has been submitted yet.  
-The POST (`router.postt()`) route processes the form submission. It reads the user’s name and message from req.body, logs the message to the console, and re-renders the contact.ejs view while passing the submitted name to display a confirmation  
+The POST (`router.post()`) route processes the form submission. It reads the user’s name and message from req.body, logs the message to the console, and re-renders the contact.ejs view while passing the submitted name to display a confirmation  
 **`app.js`:**
 ```
 const express = require('express');
