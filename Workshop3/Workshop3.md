@@ -570,7 +570,7 @@ const marked = require('marked');
 
 const router = express.Router();
 
-const requireLogin = (req, res, next) => {
+const requireLogin = async (req, res, next) => {
     if (!req.session.username) {
         req.session.messages = [{ category: 'danger', message: 'You must be logged in to access this page.' }];
         await req.session.save();
@@ -589,7 +589,7 @@ router.get('/wiki/:pageName', (req, res) => {
     res.render('wiki_page', { page, pageName, username: req.session.username, messages: [] });
 });
 
-router.get('/create', requireLogin, (req, res) => {
+router.get('/create', requireLogin, async (req, res) => {
     req.session.messages = [];
     await req.session.save();
     res.render('create_page', { username: req.session.username, errors: [], messages: req.session.messages || [] });
@@ -598,7 +598,7 @@ router.get('/create', requireLogin, (req, res) => {
 router.post('/create', requireLogin, [
     body('title').notEmpty().withMessage('Page title is required').trim(),
     body('content').notEmpty().withMessage('Content is required')
-], (req, res) => {
+], async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
@@ -782,23 +782,40 @@ app.listen(port, () => {
 
 ### Using CKEditor in Express
 
-Markdown is great, but some users prefer a visual editor. **CKEditor** provides a WYSIWYG (What You See Is What You Get) interface, outputting HTML directly. We’ll use the `ckeditor` npm package to integrate it. WYSIWYG editors like CKEditor allow non-technical users to format text visually, similar to word processors. It generates HTML under the hood, but we must sanitize outputs to prevent XSS. CKEditor includes built-in security features, but always validate on the server.
-
+Markdown is great, but some users prefer a visual editor. **CKEditor** provides a WYSIWYG (What You See Is What You Get) interface, outputting HTML directly. We’ll use the CKEditor 5 editor. WYSIWYG editors like CKEditor allow non-technical users to format text visually, similar to word processors. It generates HTML under the hood, but we must sanitize outputs to prevent XSS. CKEditor includes built-in security features, but always validate on the server.  
+First we install it using 
 **Install CKEditor**:
 
 ```bash
-npm install ckeditor4
+npm install @ckeditor/ckeditor5-build-classic
 ```
+Now, let’s create a reusable layout file for the CKEditor setup.  
+This will make it easy to include the editor wherever it’s needed for example, on our “create_page.ejs” page.
+**`views/partial/_ckeditor.js`**
+```
+ <script type="module">
+    import ClassicEditor from '/node_modules/@ckeditor/ckeditor5-build-classic/build/ckeditor.js';
 
-This installs version 4 of CKEditor, a stable, feature-rich editor. For newer versions, consider CKEditor 5, which has a modular architecture.
+    let editorInstance;
+    ClassicEditor.create(document.querySelector('#editor'))
+      .then(editor => {
+        editorInstance = editor;
+      })
+      .catch(console.error);
 
-**`views/create_page_ck.ejs`:**
+    document.querySelector('#editorForm').addEventListener('submit', e => {
+      document.querySelector('#content').value = editorInstance.getData();
+    });
+  </script>
+```
+Now we can include the CKEditor partial in our form view. we just include it using  `<%- include('partials/_ckeditor') %>`
+**`views/create_page.ejs`: (updated)**
 
 ```html
-<%- include('layout') %>
+<%- include('partials/_navbar') %>
 <h1 class="page-title">Create a Wiki Page (CKEditor)</h1>
 
-<form method="POST" class="form-card">
+<form id="editorForm" method="POST" class="form-card">
     <label for="title">Page Title</label>
     <input id="title" name="title" type="text" required>
     <% errors.forEach(error => { %>
@@ -820,14 +837,64 @@ This installs version 4 of CKEditor, a stable, feature-rich editor. For newer ve
     </div>
 </form>
 
-<script src="/ckeditor/ckeditor.js"></script>
-<script>
-    CKEDITOR.replace('content');
-</script>
+<%- include('partials/_ckeditor') %>
+
+<%- include('partials/_footer') %>
 ```
 
-This template replaces the textarea with CKEditor via JavaScript, transforming it into a rich editor. Ensure the CKEditor files are in `/public/ckeditor/` for the script to load. Copy the CKEditor library to `public/ckeditor/` after downloading from `node_modules/ckeditor4/`.
+This template replaces the textarea with CKEditor via JavaScript, transforming it into a rich editor.
+Finally we fix the wiki.js route  
+**`routes/wiki.js`:**
 
+```javascript
+const express = require('express');
+const { body, validationResult } = require('express-validator');
+
+const router = express.Router();
+
+const requireLogin = async (req, res, next) => {
+    if (!req.session.username) {
+        req.session.messages = [{ category: 'danger', message: 'You must be logged in to access this page.' }];
+        await req.session.save();
+        return res.redirect('/login');
+    }
+    next();
+};
+
+router.get('/wiki/:pageName', (req, res) => {
+    const pageName = req.params.pageName;
+    const page = app.locals.pages[pageName];
+    if (!page) {
+        return res.status(404).render('404', { username: req.session.username, messages: [] });
+    }
+    page.htmlContent = page.content;
+    res.render('wiki_page', { page, pageName, username: req.session.user.username, messages: [] });
+});
+
+router.get('/create', requireLogin, async (req, res) => {
+    req.session.messages = [];
+    await req.session.save();
+    res.render('create_page', { username: req.session.user.username, errors: [], messages: req.session.messages || [] });
+});
+
+router.post('/create', requireLogin, [
+    body('title').notEmpty().withMessage('Page title is required').trim(),
+    body('content').notEmpty().withMessage('Content is required')
+], async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
+        await req.session.save();
+        return res.redirect('/create');
+    }
+    const { title, content } = req.body;
+    app.locals.pages[title] = { content, author: req.session.user.username};
+    res.redirect(`/wiki/${title}`);
+});
+
+module.exports = router;
+```
+Since CKEditor 5 outputs fully formatted HTML, there’s no need to parse or convert the content (e.g., using marked).
 ## File Uploads
 
 Let’s allow users to upload profile pictures (avatars) using the `multer` middleware for secure file handling. File uploads are essential for features like avatars or attachments, but they introduce risks like server overload or malicious files. Multer handles multipart/form-data, parses files, and allows custom storage and filtering.
