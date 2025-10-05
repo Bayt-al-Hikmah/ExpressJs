@@ -49,14 +49,15 @@ const { body, validationResult } = require('express-validator');
 const router = express.Router();
 
 router.get('/register', (req, res) => {
-    res.render('register', { errors: [], messages: req.session.messages || [] });
+    
     req.session.messages = [];
+    res.render('register', { errors: [], messages: req.session.messages || [] });
 });
 
 router.post('/register', [
     body('username').notEmpty().withMessage('Username is required').trim().isLength({ min: 3, max: 25 }),
     body('password').notEmpty().withMessage('Password is required').isLength({ min: 6 })
-], (req, res) => {
+], async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
@@ -77,7 +78,7 @@ router.post('/register', [
     res.redirect('/login');
 });
 
-router.get('/login', (req, res) => {
+router.get('/login', async (req, res) => {
       const messages = req.session.messages || [];
       req.session.messages = [];
       await req.session.save();
@@ -87,7 +88,7 @@ router.get('/login', (req, res) => {
 router.post('/login', [
     body('username').notEmpty().withMessage('Username is required'),
     body('password').notEmpty().withMessage('Password is required')
-], (req, res) => {
+], async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
@@ -109,7 +110,7 @@ router.post('/login', [
     }
 });
 
-router.get('/logout', (req, res) => {
+router.get('/logout',  async  (req, res) => {
     await req.session.destroy();
     res.redirect('/login');
 });
@@ -571,7 +572,8 @@ const marked = require('marked');
 const router = express.Router();
 
 const requireLogin = async (req, res, next) => {
-    if (!req.session.username) {
+    const username = req.session.user?.username || null;
+    if (!username) {
         req.session.messages = [{ category: 'danger', message: 'You must be logged in to access this page.' }];
         await req.session.save();
         return res.redirect('/login');
@@ -582,23 +584,26 @@ const requireLogin = async (req, res, next) => {
 router.get('/wiki/:pageName', (req, res) => {
     const pageName = req.params.pageName;
     const page = app.locals.pages[pageName];
+    const username = req.session.user?.username || null;
     if (!page) {
-        return res.status(404).render('404', { username: req.session.username, messages: [] });
+        return res.status(404).render('404', { username: username, messages: [] });
     }
     page.htmlContent = page.isMarkdown ? marked(page.content) : page.content;
-    res.render('wiki_page', { page, pageName, username: req.session.username, messages: [] });
+    res.render('wiki_page', { page, pageName, username: username, messages: [] });
 });
 
 router.get('/create', requireLogin, async (req, res) => {
+    const username = req.session.user?.username || null;
     req.session.messages = [];
     await req.session.save();
-    res.render('create_page', { username: req.session.username, errors: [], messages: req.session.messages || [] });
+    res.render('create_page', { username: username, errors: [], messages: req.session.messages || [] });
 });
 
 router.post('/create', requireLogin, [
     body('title').notEmpty().withMessage('Page title is required').trim(),
     body('content').notEmpty().withMessage('Content is required')
 ], async (req, res) => {
+    const username = req.session.user?.username || null;
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
@@ -606,7 +611,7 @@ router.post('/create', requireLogin, [
         return res.redirect('/create');
     }
     const { title, content } = req.body;
-    app.locals.pages[title] = { content, author: req.session.user.username, isMarkdown: true };
+    app.locals.pages[title] = { content, author: username, isMarkdown: true };
     res.redirect(`/wiki/${title}`);
 });
 
@@ -791,7 +796,7 @@ npm install @ckeditor/ckeditor5-build-classic
 ```
 Now, let’s create a reusable layout file for the CKEditor setup.  
 This will make it easy to include the editor wherever it’s needed for example, on our “create_page.ejs” page.
-**`views/partial/_ckeditor.js`**
+**`views/partial/_ckeditor.ejs`**
 ```
  <script type="module">
     import ClassicEditor from '/node_modules/@ckeditor/ckeditor5-build-classic/build/ckeditor.js';
@@ -808,6 +813,8 @@ This will make it easy to include the editor wherever it’s needed for example,
     });
   </script>
 ```
+This script initializes **CKEditor 5** on a text area and ensures its HTML content is sent to the server when the form is submitted. The line `import ClassicEditor` loads the CKEditor 5 build from your `node_modules` folder using ES module syntax (`type="module"` is required for this). Then, `ClassicEditor.create(document.querySelector('#editor'))` replaces the textarea with a full-featured rich text editor. When the editor is ready, its instance is stored in `editorInstance`. Before submitting the form, the script takes the HTML content generated by CKEditor using `editorInstance.getData()` and assigns it to the hidden field named `content`. This way, the form sends clean, ready-to-use HTML to your Express backend without needing extra parsing or conversion.  
+
 Now we can include the CKEditor partial in our form view. we just include it using  `<%- include('partials/_ckeditor') %>`
 **`views/create_page.ejs`: (updated)**
 
@@ -853,7 +860,8 @@ const { body, validationResult } = require('express-validator');
 const router = express.Router();
 
 const requireLogin = async (req, res, next) => {
-    if (!req.session.username) {
+    const username = req.session.user?.username || null;
+    if (!username) {
         req.session.messages = [{ category: 'danger', message: 'You must be logged in to access this page.' }];
         await req.session.save();
         return res.redirect('/login');
@@ -864,23 +872,26 @@ const requireLogin = async (req, res, next) => {
 router.get('/wiki/:pageName', (req, res) => {
     const pageName = req.params.pageName;
     const page = app.locals.pages[pageName];
+    const username = req.session.user?.username || null;
     if (!page) {
-        return res.status(404).render('404', { username: req.session.username, messages: [] });
+        return res.status(404).render('404', { username: username, messages: [] });
     }
     page.htmlContent = page.content;
-    res.render('wiki_page', { page, pageName, username: req.session.user.username, messages: [] });
+    res.render('wiki_page', { page, pageName, username: username, messages: [] });
 });
 
 router.get('/create', requireLogin, async (req, res) => {
+    const username = req.session.user?.username || null;
     req.session.messages = [];
     await req.session.save();
-    res.render('create_page', { username: req.session.user.username, errors: [], messages: req.session.messages || [] });
+    res.render('create_page', { username: username, errors: [], messages: req.session.messages || [] });
 });
 
 router.post('/create', requireLogin, [
     body('title').notEmpty().withMessage('Page title is required').trim(),
     body('content').notEmpty().withMessage('Content is required')
 ], async (req, res) => {
+    const username = req.session.user?.username || null;
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
@@ -888,13 +899,13 @@ router.post('/create', requireLogin, [
         return res.redirect('/create');
     }
     const { title, content } = req.body;
-    app.locals.pages[title] = { content, author: req.session.user.username};
+    app.locals.pages[title] = { content, author: username};
     res.redirect(`/wiki/${title}`);
 });
 
 module.exports = router;
 ```
-Since CKEditor 5 outputs fully formatted HTML, there’s no need to parse or convert the content (e.g., using marked).
+Since CKEditor 5 outputs fully formatted HTML, there’s no need to parse or convert the content (e.g., using marked). Our ``app.js`` remains the same and doesn’t require any changes.
 ## File Uploads
 
 Let’s allow users to upload profile pictures (avatars) using the `multer` middleware for secure file handling. File uploads are essential for features like avatars or attachments, but they introduce risks like server overload or malicious files. Multer handles multipart/form-data, parses files, and allows custom storage and filtering.
