@@ -551,7 +551,7 @@ The line ``require('dotenv').config();`` loads these environment variables from 
 
 ## Rich Text and Pages
 
-A wiki needs to support **rich text** for formatted content like headings, bold text, and lists. Instead of allowing raw HTML (which is insecure), we’ll use **Markdown** and convert it to HTML on the server using the `marked` library. Rich text enhances user-generated content by allowing formatting without compromising security. Raw HTML inputs can lead to XSS (Cross-Site Scripting) attacks, where malicious scripts are injected. Markdown is a lightweight markup language that's easy to learn and safe when parsed correctly—it converts plain text to HTML while sanitizing potential threats.
+A wiki needs to support **rich text** for formatted content like headings, bold text, and lists. Instead of allowing raw HTML (which is insecure), we’ll use **Markdown** and convert it to HTML on the server using the `marked` library. Rich text enhances user-generated content by allowing formatting without compromising security. Raw HTML inputs can lead to XSS (Cross-Site Scripting) attacks, where malicious scripts are injected. Markdown is a lightweight markup language that's easy to learn and safe when parsed correctly it converts plain text to HTML while sanitizing potential threats.
 
 **Install `marked`:**
 
@@ -567,12 +567,13 @@ The `marked` library is a fast, reliable Markdown parser that outputs HTML. It's
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const marked = require('marked');
-const { pages } = require('./data');
+
 const router = express.Router();
 
 const requireLogin = (req, res, next) => {
     if (!req.session.username) {
         req.session.messages = [{ category: 'danger', message: 'You must be logged in to access this page.' }];
+        await req.session.save();
         return res.redirect('/login');
     }
     next();
@@ -580,7 +581,7 @@ const requireLogin = (req, res, next) => {
 
 router.get('/wiki/:pageName', (req, res) => {
     const pageName = req.params.pageName;
-    const page = pages[pageName];
+    const page = app.locals.pages[pageName];
     if (!page) {
         return res.status(404).render('404', { username: req.session.username, messages: [] });
     }
@@ -589,8 +590,9 @@ router.get('/wiki/:pageName', (req, res) => {
 });
 
 router.get('/create', requireLogin, (req, res) => {
-    res.render('create_page', { username: req.session.username, errors: [], messages: req.session.messages || [] });
     req.session.messages = [];
+    await req.session.save();
+    res.render('create_page', { username: req.session.username, errors: [], messages: req.session.messages || [] });
 });
 
 router.post('/create', requireLogin, [
@@ -600,40 +602,77 @@ router.post('/create', requireLogin, [
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
+        await req.session.save();
         return res.redirect('/create');
     }
     const { title, content } = req.body;
-    pages[title] = { content, author: req.session.username, isMarkdown: true };
-    res.redirect(`/wiki/${title}`);
-});
-
-router.get('/create-ck', requireLogin, (req, res) => {
-    res.render('create_page_ck', { username: req.session.username, errors: [], messages: req.session.messages || [] });
-    req.session.messages = [];
-});
-
-router.post('/create-ck', requireLogin, [
-    body('title').notEmpty().withMessage('Page title is required').trim(),
-    body('content').notEmpty().withMessage('Content is required')
-], (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
-        return res.redirect('/create-ck');
-    }
-    const { title, content } = req.body;
-    pages[title] = { content, author: req.session.username, isMarkdown: false };
+    app.locals.pages[title] = { content, author: req.session.user.username, isMarkdown: true };
     res.redirect(`/wiki/${title}`);
 });
 
 module.exports = router;
 ```
+ **GET /wiki/:pageName**
 
-These routes handle viewing and creating pages, with middleware to enforce login for creation. Dynamic routing with `:pageName` allows flexible page access. The `requireLogin` middleware protects creation routes. In viewing, we conditionally parse content based on the `isMarkdown` flag, ensuring correct rendering.
+When a user visits `/wiki/:pageName`, the server:
 
+-  Extracts the `pageName` from the URL parameters.
+    
+-  Looks up the page in `app.locals.pages`.
+    
+-  If the page doesn’t exist, it responds with a 404 page.
+    
+-  If the page exists and is marked as Markdown (`page.isMarkdown`), `marked(page.content)` converts the Markdown text into HTML. If not, it renders the content as-is.
+    
+-  Finally, the server renders the `wiki_page` template, passing the HTML content, page name, username from the session, and any messages.
+    
+
+
+**GET /create**
+
+When a logged-in user visits `/create`:
+
+-  The `requireLogin` middleware ensures that only authenticated users can access the page.
+    
+    - If the user is not logged in, a flash message is stored in the session, and the user is redirected to `/login`.
+        
+-  The session messages are cleared before rendering.
+    
+-  The server renders the `create_page` template, passing the username, any validation errors, and messages.
+    
+
+**POST /create**
+
+When a logged-in user submits the form to create a new wiki page:
+- **Validation:**
+    
+    - `title` and `content` are required.
+        
+    - `express-validator` checks these fields and collects errors if they are missing.
+        
+    - Validation errors are converted into session flash messages and the user is redirected back to `/create` if any exist.
+        
+- **Page Creation:**
+    
+    - If validation passes, a new entry is added to the `pages` object.
+        
+    - The page stores:
+        
+        - `content` (user-submitted text),
+            
+        - `author` (current username from the session),
+            
+        - `isMarkdown` (true, indicating the content should be parsed by `marked`).
+            
+- **Redirect to the Page:**
+    
+    - The user is redirected to `/wiki/:title` where the new page is displayed with the Markdown converted to HTML.
+
+#### Now We create the templates
 **`views/wiki_page.ejs`:**
 
 ```html
+<%- include('partials/_navbar') %>
 <%- include('layout') %>
 <h1><%= pageName %></h1>
 <p><em>By: <%= page.author %></em></p>
@@ -641,6 +680,7 @@ These routes handle viewing and creating pages, with middleware to enforce login
 <div>
     <%- page.htmlContent %>
 </div>
+<%- include('partials/_footer') %>
 ```
 
 This template displays the page title, author, and rendered HTML content. The `<%- %>` tag is used for unescaped output, trusting the sanitized HTML from `marked`.
@@ -648,14 +688,14 @@ This template displays the page title, author, and rendered HTML content. The `<
 **`views/create_page.ejs`:**
 
 ```html
-<%- include('layout') %>
+<%- include('partials/_navbar') %>
 <h1 class="page-title">Create a Wiki Page</h1>
 
 <form method="POST" class="form-card">
     <label for="title">Page Title</label>
     <input id="title" name="title" type="text" required>
     <% errors.forEach(error => { %>
-        <% if (error.param === 'title') { %>
+        <% if (error.path === 'title') { %>
             <span style="color:red;"><%= error.msg %></span><br>
         <% } %>
     <% }) %>
@@ -667,7 +707,7 @@ Write your text here...
 **bold text**
 *italic text*"></textarea>
     <% errors.forEach(error => { %>
-        <% if (error.param === 'content') { %>
+        <% if (error.path === 'content') { %>
             <span style="color:red;"><%= error.msg %></span><br>
         <% } %>
     <% }) %>
@@ -687,11 +727,60 @@ Write your text here...
         <li><code>[Link](https://example.com)</code> → link</li>
     </ul>
 </div>
+<%- include('partials/_footer') %>
 ```
 
 The creation form includes a textarea with a placeholder demonstrating Markdown syntax. A quick reference card educates users, making the app more user-friendly for beginners.
+#### Updating app.js
+Now we update our app.js so we include the new routes
+```
+require('dotenv').config();
+const express = require('express');
+const { ironSession } = require('iron-session/express');
+const authRoutes = require('./routes/auth');
+const wiki = require('./routes/wiki');
 
-## Using CKEditor in Express
+const app = express();
+const port = 3000;
+
+app.set('view engine', 'ejs');
+app.use(express.static('public'));
+app.use(express.urlencoded({ extended: true }));
+
+app.use(
+  ironSession({
+    cookieName: 'session',
+    password: process.env.SESSION_SECRET || 'a-very-long-random-secret-key-change-this!',
+    cookieOptions: {
+      secure: process.env.NODE_ENV === 'production', // only over HTTPS in production
+      httpOnly: true,
+      sameSite: 'lax',
+      maxAge: 15 * 60,
+    },
+  })
+);
+// Database
+app.locals.users = {}; 
+app.locals.pages = {};
+
+app.use(authRoutes);
+app.use(wiki);
+
+app.get('/', (req, res) => {
+  const username = req.session.user?.username || null;
+  const messages = req.session.messages || [];
+
+  res.render('index', { username, messages });
+
+  req.session.messages = [];
+});
+
+app.listen(port, () => {
+    console.log(`Server running at http://localhost:${port}`);
+});
+```
+
+### Using CKEditor in Express
 
 Markdown is great, but some users prefer a visual editor. **CKEditor** provides a WYSIWYG (What You See Is What You Get) interface, outputting HTML directly. We’ll use the `ckeditor` npm package to integrate it. WYSIWYG editors like CKEditor allow non-technical users to format text visually, similar to word processors. It generates HTML under the hood, but we must sanitize outputs to prevent XSS. CKEditor includes built-in security features, but always validate on the server.
 
