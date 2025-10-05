@@ -826,7 +826,7 @@ Now we can include the CKEditor partial in our form view. we just include it usi
     <label for="title">Page Title</label>
     <input id="title" name="title" type="text" required>
     <% errors.forEach(error => { %>
-        <% if (error.param === 'title') { %>
+        <% if (error.path === 'title') { %>
             <span style="color:red;"><%= error.msg %></span><br>
         <% } %>
     <% }) %>
@@ -834,7 +834,7 @@ Now we can include the CKEditor partial in our form view. we just include it usi
     <label for="content">Content</label>
     <textarea id="content" name="content"></textarea>
     <% errors.forEach(error => { %>
-        <% if (error.param === 'content') { %>
+        <% if (error.path === 'content') { %>
             <span style="color:red;"><%= error.msg %></span><br>
         <% } %>
     <% }) %>
