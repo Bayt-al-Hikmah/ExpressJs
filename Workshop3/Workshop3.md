@@ -319,6 +319,14 @@ This template extends the layout and provides a registration form. It displays f
 ```
 
 Similar to registration, this login form uses EJS to show errors and includes a link to register, guiding new users seamlessly.
+**`views/index.ejs`:**
+
+```html
+<%- include('partials/_navbar') %>
+<h1 class="page-title">Welcome to MyApp</h1>
+<p>Create and view wiki pages!</p>
+<%- include('partials/_footer') %>
+```
 ### Adding Styles
 **`public/style.css`:**
 
@@ -479,8 +487,7 @@ require('dotenv').config();
 const express = require('express');
 const { ironSession } = require('iron-session/express');
 const authRoutes = require('./routes/auth');
-const wikiRoutes = require('./routes/wiki');
-const profileRoutes = require('./routes/profile');
+
 const app = express();
 const port = 3000;
 
@@ -505,8 +512,6 @@ app.locals.users = {};
 app.locals.pages = {};
 
 app.use(authRoutes);
-app.use(wikiRoutes);
-app.use(profileRoutes);
 
 app.get('/', (req, res) => {
   const username = req.session.user?.username || null;
