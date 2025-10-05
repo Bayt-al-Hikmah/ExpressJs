@@ -1,9 +1,9 @@
 ## Objectives
 
-- Implement user **registration, login, and logout** functionality using Express `express-session`.
+- Implement user **registration, login, and logout** functionality using Express `iron-session`.
 - Build a simple wiki app where users can create and view pages.
 - Handle **rich text** input safely using Markdown.
-- Allow users to **upload files** (like avatars) and manage them securely.
+- Allow users to **upload files** and manage them securely.
 - Explore the evolution of CSS: from component classes to **utility-first frameworks**.
 
 ## User Authentication
@@ -12,37 +12,33 @@ User authentication is a foundational aspect of web applications, ensuring that 
 
 ### Simulating Our Database
 
-Since we’re not using a database yet, we’ll simulate user storage with a JavaScript object. In a real application, you’d replace this with a database like MongoDB or PostgreSQL. Simulating a database with in-memory objects is a common practice during development or for small-scale prototypes. It allows us to focus on application logic without the overhead of setting up a full database system. However, keep in mind that this data will be lost when the server restarts, so it's not suitable for production. In a real-world scenario, you'd integrate an ORM like Mongoose for MongoDB to persist data across sessions.
+Since we’re not using a database yet, we’ll simulate user storage with a JavaScript object. In a real application, we replace this with a database like MongoDB or PostgreSQL. Simulating a database with in-memory objects is a common practice during development or for small-scale prototypes. It allows us to focus on application logic without the overhead of setting up a full database system. However, keep in mind that this data will be lost when the server restarts, so it's not suitable for production. In a real-world scenario, you'd integrate an ORM like Mongoose for MongoDB to persist data across sessions.
 
-**`routes/data.js`:**
-
+**`app.js`:**
+To create the database we add to app.js the following lines
 ```javascript
-const users = {}; // e.g., { 'username': { password: 'password123', avatar: null } }
-const pages = {}; // e.g., { 'HomePage': { content: 'Welcome!', author: 'admin' } }
+app.locals.users = {}; // e.g., { 'username': { password: 'password123', avatar: null } }
+app.locals.pages = {}; // e.g., { 'HomePage': { content: 'Welcome!', author: 'admin' } }
 
-module.exports = { users, pages };
 ```
 
-This simple object structure mimics key-value storage: users are indexed by username, and pages by their titles. Each user entry holds a password (stored in plain text here for simplicity—never do this in production; use hashing with libraries like bcrypt) and an optional avatar. Pages store content, author, and later, flags for content type.
+This simple object structure mimics key-value storage: users are indexed by username, and pages by their titles. Each user entry holds a password and an optional avatar. Pages store content, author, and later, flags for content type.
 
-### The Express `express-session` Middleware
+### The Express `iron-session` Middleware
 
-How does our app remember who’s logged in across requests? Express uses the `express-session` middleware to manage **sessions**, which store user data in a secure cookie on the client’s browser. We can store information like the username in the session and access it on subsequent requests. Sessions solve the stateless nature of HTTP by maintaining state between requests. The middleware generates a unique session ID, signs it with a secret key to prevent tampering, and stores session data on the server (or in a store like Redis for scalability). This approach is more secure than storing sensitive data in cookies directly, as only the ID is sent to the client.
+How does our app remember who’s logged in across requests? Express uses the **`iron-session`** middleware to manage **sessions**, which store encrypted user data directly in a secure cookie on the client’s browser. Unlike traditional session systems that rely on a server-side store like Redis, `iron-session` keeps the data client-side but it’s sealed using strong encryption and signing keys, so the contents cannot be read or tampered with.
 
-To use sessions, Express requires a `secret` for signing the session cookie to prevent tampering. We’ll set this up in our main app file and use middleware to handle authentication. The secret should be a long, random string kept private (e.g., via environment variables). Options like `resave` and `saveUninitialized` control session persistence; setting them to false optimizes performance by avoiding unnecessary saves.
+We can safely store lightweight information, such as a username or user ID, inside this encrypted cookie and access it on subsequent requests. This allows our app to maintain state between HTTP requests while staying stateless on the server. `iron-session` uses a secret key (defined in our environment variables) to encrypt and sign the session cookie. It’s essential that this key be long and random to ensure security.
 
 **Install required packages**:
 
 ```bash
-npm install express express-session ejs marked express-validator multer
+npm install express iron-session ejs marked express-validator multer
 ```
 
-These packages provide: Express for the web framework, express-session for sessions, EJS for templating, marked for Markdown parsing, express-validator for input validation, and multer for file uploads. Always install dependencies at the start to ensure your environment is ready.
+These packages provide: Express for the web framework, iron-session for sessions, EJS for templating, marked for Markdown parsing, express-validator for input validation, and multer for file uploads. Always install dependencies at the start to ensure your environment is ready.
 
-### Modular Routing with Express Router
-
-Instead of defining all routes in `app.js`, we’ll use Express’s `Router` to organize routes into separate files for better modularity. This approach keeps our code clean and scalable, especially as the app grows. Each router acts as a mini-app, handling specific routes and middleware. Modular routing promotes separation of concerns, making it easier to maintain large applications. For instance, authentication logic stays isolated from wiki content routes, reducing bugs and improving collaboration in teams. Express Router allows mounting these mini-apps at specific paths, like `/auth` if needed.
-
+### Creating the Routes
 Create a `routes` folder with an `auth.js` file for authentication routes and a `wiki.js` file for wiki-related routes.
 
 **`routes/auth.js`:**
@@ -50,7 +46,6 @@ Create a `routes` folder with an `auth.js` file for authentication routes and a 
 ```javascript
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const { users } = require('./data');
 const router = express.Router();
 
 router.get('/register', (req, res) => {
@@ -65,23 +60,28 @@ router.post('/register', [
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
+        await req.session.save();
         return res.redirect('/register');
     }
 
     const { username, password } = req.body;
-    if (users[username]) {
+    if (app.locals.users[username]) {
         req.session.messages = [{ category: 'danger', message: 'Username already exists!' }];
+        await req.session.save();
         return res.redirect('/register');
     }
 
-    users[username] = { password, avatar: null };
+    app.locals.users[username] = { password, avatar: null };
     req.session.messages = [{ category: 'success', message: 'Registration successful! Please log in.' }];
+    await req.session.save();
     res.redirect('/login');
 });
 
 router.get('/login', (req, res) => {
-    res.render('login', { errors: [], messages: req.session.messages || [] });
-    req.session.messages = [];
+      const messages = req.session.messages || [];
+      req.session.messages = [];
+      await req.session.save();
+      res.render('login', { errors: [], messages });
 });
 
 router.post('/login', [
@@ -91,69 +91,112 @@ router.post('/login', [
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
+        await req.session.save();
         return res.redirect('/login');
     }
 
     const { username, password } = req.body;
-    const user = users[username];
+    const user = app.locals.users[username];
     if (user && user.password === password) {
-        req.session.username = username;
+        req.session.user = { username };
         req.session.messages = [{ category: 'success', message: 'Login successful!' }];
+        await req.session.save();
         res.redirect('/');
     } else {
         req.session.messages = [{ category: 'danger', message: 'Invalid username or password.' }];
+        await req.session.save();
         res.redirect('/login');
     }
 });
 
 router.get('/logout', (req, res) => {
-    req.session.destroy(() => {
-        res.redirect('/login');
-    });
+    await req.session.destroy();
+    res.redirect('/login');
 });
 
 module.exports = router;
 ```
+**GET /register**
 
-In this file, we handle GET and POST routes for registration, login, and logout. Validation with express-validator prevents common issues like empty fields or short passwords, sanitizing input to avoid security risks. Errors and messages are stored in the session for flash notifications, which are cleared after display to prevent repetition. The logout route destroys the session, effectively logging the user out.
+When a user visits `/register`, the server renders the registration page using the EJS template engine.  
+It also passes any **flash messages** (like “Username already exists” or “Registration successful”) stored in the session to the template.  
+After rendering, these messages are cleared to avoid displaying them again on subsequent requests.  
+This provides users with immediate feedback about their registration attempts or validation errors.
 
-**`app.js`:**
 
-```javascript
-const express = require('express');
-const session = require('express-session');
-const authRoutes = require('./routes/auth');
-const wikiRoutes = require('./routes/wiki');
-const profileRoutes = require('./routes/profile');
-const app = express();
-const port = 3000;
+ **POST /register**
 
-app.set('view engine', 'ejs');
-app.use(express.static('public'));
-app.use(session({
-    secret: 'your-super-secret-key-that-no-one-knows',
-    resave: false,
-    saveUninitialized: false
-}));
-app.use(express.urlencoded({ extended: true }));
+When the registration form is submitted, the server receives the `username` and `password` from the request body.
 
-app.use(authRoutes);
-app.use(wikiRoutes);
-app.use(profileRoutes);
+1. **Validation:**  
+    The input fields are first validated using `express-validator`.
+    
+    - The username must be between 3 and 25 characters.
+        
+    - The password must be at least 6 characters long.  
+        If any validation errors occur, they are converted into flash messages and displayed on the registration page.
+        
+2. **Duplicate Check:**  
+    The server checks if the username already exists in the in-memory `users` store.
+    
+    - If it does, a danger message (“Username already exists!”) is stored in the session, and the user is redirected back to `/register`.
+        
+3. **Secure Password Storage:**  
+    If the username is new, the password is **securely hashed using bcrypt** before being saved.  
+    Hashing ensures that even if the user data were exposed, real passwords would remain protected.
+    
+4. **User Creation:**  
+    The new user is stored in the `users` object with the hashed password and a placeholder for the avatar field.
+    
+5. **Feedback and Redirect:**  
+    A success flash message (“Registration successful! Please log in.”) is saved, and the user is redirected to the `/login` page.
+    
 
-app.get('/', (req, res) => {
-    res.render('index', { username: req.session.username, messages: req.session.messages || [] });
-    req.session.messages = [];
-});
+**GET /login**
 
-app.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
-});
-```
+When a user visits `/login`, the server renders the login page template.  
+As with registration, it retrieves and displays any flash messages from the session.  
+These might include errors like “Invalid username or password” or notices like “Registration successful! Please log in.”  
+After rendering, messages are cleared from the session to prevent repetition.
 
-This main file sets up the Express app, configures the view engine (EJS for dynamic HTML), serves static files from 'public', initializes sessions, and parses URL-encoded form data. Routes are mounted, and the root route renders an index page with session-based username and messages. The server listens on port 3000, a common development port.
 
-**`views/layout.ejs`:**
+**POST /login**
+
+When the login form is submitted:
+
+1. **Validation:**  
+    The server ensures both `username` and `password` fields are filled.  
+    If any are missing, validation errors are stored as messages, and the user is redirected back to `/login`.
+    
+2. **User Lookup:**  
+    The server searches the `users` object for a user matching the provided username.
+    
+3. **Password Verification:**  
+    If the user exists, `bcrypt.compare()` verifies the submitted password against the stored password.
+    
+4. **Successful Login:**  
+    If verification succeeds, a new session is created and the user’s data (only the username) is stored inside `req.session.user`.  
+    A success message (“Login successful!”) is added, and the user is redirected to the home page (`/`).
+    
+5. **Failed Login:**  
+    If verification fails, a danger message (“Invalid username or password.”) is stored, and the user is redirected back to `/login`.
+    
+
+**GET /logout**
+
+When the user visits `/logout`:
+
+1. The current session is **destroyed** using `await req.session.destroy()`, which removes the user’s login state from the encrypted cookie.
+    
+2. The user is redirected to `/login`, where they can see a message (if desired) confirming they’ve logged out.
+    
+
+This ensures the session data is fully cleared, protecting against unauthorized access if the same browser is reused.
+
+
+
+### Create Templates
+**`views/partials/_navbar.ejs`:**
 
 ```html
 <!DOCTYPE html>
@@ -193,7 +236,11 @@ This main file sets up the Express app, configures the view engine (EJS for dyna
         <% } %>
 
         <section class="content">
-            <%- body %>
+
+
+```
+**`views/partials/_footer.ejs`:**
+```
         </section>
     </main>
 
@@ -205,20 +252,19 @@ This main file sets up the Express app, configures the view engine (EJS for dyna
 </body>
 </html>
 ```
-
 EJS templates allow embedding JavaScript in HTML for dynamic content. This layout serves as a base template, including a header with conditional navigation based on login status, a main content area for flash messages (temporary notifications) and the page body, and a footer. The `<%- body %>` tag injects child template content.
 
 **`views/register.ejs`:**
 
 ```html
-<%- include('layout') %>
+<%- include('partials/_navbar') %>
 <h1 class="page-title">Create an account</h1>
 
 <form method="POST" class="form-card">
     <label for="username">Username</label>
     <input id="username" name="username" type="text" required>
     <% errors.forEach(error => { %>
-        <% if (error.param === 'username') { %>
+        <% if (error.path === 'username') { %>
             <span style="color:red;"><%= error.msg %></span><br>
         <% } %>
     <% }) %>
@@ -226,7 +272,7 @@ EJS templates allow embedding JavaScript in HTML for dynamic content. This layou
     <label for="password">Password</label>
     <input id="password" name="password" type="password" required>
     <% errors.forEach(error => { %>
-        <% if (error.param === 'password') { %>
+        <% if (error.path === 'password') { %>
             <span style="color:red;"><%= error.msg %></span><br>
         <% } %>
     <% }) %>
@@ -236,6 +282,7 @@ EJS templates allow embedding JavaScript in HTML for dynamic content. This layou
         <a href="/login" class="btn btn-link">Already have an account?</a>
     </div>
 </form>
+<%- include('partials/_footer') %>
 ```
 
 This template extends the layout and provides a registration form. It displays field-specific errors inline, improving user experience by highlighting issues directly. The 'required' attribute adds client-side validation, but server-side checks are essential for security.
@@ -243,14 +290,14 @@ This template extends the layout and provides a registration form. It displays f
 **`views/login.ejs`:**
 
 ```html
-<%- include('layout') %>
+<%- include('partials/_navbar') %>
 <h1 class="page-title">Log in</h1>
 
 <form method="POST" class="form-card">
     <label for="username">Username</label>
     <input id="username" name="username" type="text" required>
     <% errors.forEach(error => { %>
-        <% if (error.param === 'username') { %>
+        <% if (error.path === 'username') { %>
             <span style="color:red;"><%= error.msg %></span><br>
         <% } %>
     <% }) %>
@@ -258,7 +305,7 @@ This template extends the layout and provides a registration form. It displays f
     <label for="password">Password</label>
     <input id="password" name="password" type="password" required>
     <% errors.forEach(error => { %>
-        <% if (error.param === 'password') { %>
+        <% if (error.path === 'password') { %>
             <span style="color:red;"><%= error.msg %></span><br>
         <% } %>
     <% }) %>
@@ -268,10 +315,11 @@ This template extends the layout and provides a registration form. It displays f
         <a href="/register" class="btn btn-link">Create account</a>
     </div>
 </form>
+<%- include('partials/_footer') %>
 ```
 
 Similar to registration, this login form uses EJS to show errors and includes a link to register, guiding new users seamlessly.
-
+### Adding Styles
 **`public/style.css`:**
 
 ```css
@@ -422,6 +470,68 @@ body {
 ```
 
 This CSS file uses CSS variables for theming, a modern approach for easy customization. It includes resets for consistent rendering, layout rules for responsiveness, and classes for headers, forms, buttons, and flash messages. The design emphasizes clean, professional aesthetics with subtle shadows and borders for depth.
+### Configure The app.js files
+
+**`app.js`:**
+
+```javascript
+require('dotenv').config();
+const express = require('express');
+const { ironSession } = require('iron-session/express');
+const authRoutes = require('./routes/auth');
+const wikiRoutes = require('./routes/wiki');
+const profileRoutes = require('./routes/profile');
+const app = express();
+const port = 3000;
+
+app.set('view engine', 'ejs');
+app.use(express.static('public'));
+app.use(express.urlencoded({ extended: true }));
+
+app.use(
+  ironSession({
+    cookieName: 'session',
+    password: process.env.SESSION_SECRET || 'a-very-long-random-secret-key-change-this!',
+    cookieOptions: {
+      secure: process.env.NODE_ENV === 'production', // only over HTTPS in production
+      httpOnly: true,
+      sameSite: 'lax',
+      maxAge: 15 * 60,
+    },
+  })
+);
+// Database
+app.locals.users = {}; 
+app.locals.pages = {};
+
+app.use(authRoutes);
+app.use(wikiRoutes);
+app.use(profileRoutes);
+
+app.get('/', (req, res) => {
+  const username = req.session.user?.username || null;
+  const messages = req.session.messages || [];
+
+  res.render('index', { username, messages });
+
+  req.session.messages = [];
+});
+
+app.listen(port, () => {
+    console.log(`Server running at http://localhost:${port}`);
+});
+```
+There are many security risks when storing and managing sessions in web applications. Poor session handling can expose users to attacks like XSS (Cross-Site Scripting), CSRF (Cross-Site Request Forgery), session hijacking, and session fixation. For example, if session tokens are stored in localStorage or accessible JavaScript variables, an attacker could steal them through malicious scripts or browser extensions. Similarly, without proper cookie configuration, attackers could trick the browser into sending valid session cookies from another site.
+
+To prevent these risks, we configure iron-session with strict cookie and encryption options. The session data is encrypted and signed using a secret key, so even if someone gains access to the cookie, they can’t read or modify it. All sensitive data stays protected on the client side in an unreadable, tamper-proof form.  
+
+- **`httpOnly: true`** → protects against XSS by preventing scripts from reading the cookie.
+- **`sameSite: 'lax'`** → helps prevent CSRF by limiting when cookies are sent in cross-site requests.
+- **`secure: true`** → ensures cookies are only sent over HTTPS, protecting them from being intercepted.
+- **`maxAge`** → keeps sessions short-lived, reducing the risk if a token is ever compromised.
+- **`password`** → encrypts and signs session data so it cannot be tampered with or decrypted without the secret key.
+
+This main file sets up the Express app, configures the view engine (EJS for dynamic HTML), serves static files from 'public', initializes sessions, and parses URL-encoded form data. Routes are mounted, and the root route renders an index page with session-based username and messages. The server listens on port 3000, a common development port.
 
 ## Rich Text and Pages
 
