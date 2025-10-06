@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>User Profile</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <h1>Hello, <%= user.username.charAt(0).toUpperCase() + user.username.slice(1) %>!</h1>
+    <p><em><%= user.bio %></em></p>
+
+    <% if (user.shoppingList.length > 0) { %>
+        <p>You have <%= user.shoppingList.length %> item(s) on your shopping list:</p>
+        <ul>
+            <% user.shoppingList.forEach(item => { %>
+                <li><%= item %></li>
+            <% }); %>
+        </ul>
+    <% } else { %>
+        <p>Your shopping list is empty!</p>
+    <% } %>
+</body>
+</html>

@@ -1,0 +1,26 @@
+<%- include('partials/_navbar') %>
+<main>
+<form class ="share_form" method="POST" action="/share">
+<h1>Share Quote</h1>
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <label for="name">Name:</label>
+    <input type="text" id="name" name="author" required>
+    <% errors.forEach( error => { %>
+        <% if ( error.path === 'author'){ %>
+            <span style="color:red;"><%= error.msg %></span>
+        <% } %>
+    <% }); %>
+
+    <label for="message">Quote</label>
+    <textarea class="textarea" id="message" name="quote" required></textarea>
+
+    <% errors.forEach( error => { %>
+        <% if (error.path === 'quote'){ %>
+            <span style="color:red;"><%= error.msg %></span>
+        <% } %>
+    <% }); %>
+
+    <button type="submit">Submit</button>
+</form>
+</main>
+<%- include('partials/_footer') %>

@@ -25,7 +25,7 @@ my_express_project/
 To serve an HTML template, we use Express’s `res.render()` method. First, we need to set up a templating engine. For this lecture, we’ll use **EJS** (Embedded JavaScript), a popular and lightweight templating engine that integrates seamlessly with Express. EJS lets us embed JavaScript directly in our HTML files to create dynamic content.  
 To get started, install EJS:
 ```
-npm install ejs
+npm install express ejs
 ```
 Then, configure Express to use EJS and create a simple template.
 **`views/index.ejs`:**
@@ -244,7 +244,7 @@ Here’s a route that passes user details to a template:
 const express = require('express');
 const router = express.Router();
 
-route.get('/profile/:name', (req, res) => {
+router.get('/profile/:name', (req, res) => {
     const userDetails = {
         username: req.params.name,
         bio: 'Loves coding in JavaScript and exploring new technologies.',
@@ -292,7 +292,7 @@ EJS allows us to add decision-making logic to templates, just like choosing an o
 
 **Example**:  
 Create a dashboard route with different messages based on user status.  
-**`routes/dashboard .js`:**
+**`routes/dashboard.js`:**
 ```
 const express = require('express');
 const router = express.Router();
@@ -305,7 +305,14 @@ module.exports = router;
 ```
 **`views/dashboard.ejs`:**
 ```
-<%- include('partials/_navbar') %>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>User Profile</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
 <div class="welcome-message">
     <% if (userStatus === 'admin') { %>
         <h1>Welcome, Administrator!</h1>
@@ -318,7 +325,8 @@ module.exports = router;
         <p>Please sign up or log in to access member features.</p>
     <% } %>
 </div>
-<%- include('partials/_footer') %>
+</body>
+</html>
 ```
 Visit `/dashboard/admin`, `/dashboard/member`, or `/dashboard/visitor` to see the appropriate message based on the status.
 ### Loops (`forEach`)
@@ -329,7 +337,7 @@ EJS loops let us iterate over arrays to display lists, such as tasks, users, or 
 
 **Example**:   
 Create a route to display a task list.
-**`routes/task.js`:**
+**`routes/tasks.js`:**
 ```
 const express = require('express');
 const router = express.Router();
@@ -346,7 +354,14 @@ module.exports = router;
 ```
 **`views/tasks.ejs`:**
 ```
-<%- include('partials/_navbar') %>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>User Profile</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
 <h1>My To-Do List</h1>
 <ul>
     <% if (tasks.length > 0) { %>
@@ -357,9 +372,10 @@ module.exports = router;
         <li>You have no tasks. Great job!</li>
     <% } %>
 </ul>
-<%- include('partials/_footer') %>
+</body>
+</html>
 ```
-This renders a bulleted list of tasks or a “no tasks” message if the array is empty. Try setting `taskList = []` in `app.js` to test the empty case.
+This renders a bulleted list of tasks or a “no tasks” message if the array is empty. Try setting `taskList = []` in `task.js` to test the empty case.
 ### Template Inheritance
 Most websites share a consistent layout a header, footer, and navigation bar across all pages. Copying this code into every template is inefficient and hard to maintain. EJS’s `<%- include() %>` lets us create a base layout and reuse it across templates.  
 Create a base navbar and footer file:  
@@ -410,12 +426,12 @@ const express = require('express');
 const router = express.Router();
 
 // GET route to display the contact form
-router.get('/', (req, res) => {
+router.get('/contact', (req, res) => {
     res.render('contact', { submittedName: null });
 });
 
 // POST route to handle form submission
-router.post('/', (req, res) => {
+router.post('/contact', (req, res) => {
     const name = req.body.name;
     const message = req.body.message;
     console.log(`Received message from ${name}: ${message}`);
@@ -440,7 +456,7 @@ app.set('views', path.join(__dirname, 'views'));
 app.use(express.static('public'));
 app.use(express.urlencoded({ extended: true }));  // To parse URL-encoded form data
 
-app.use('/contact', require('./routes/contact'));
+app.use('/', require('./routes/contact'));
 
 
 app.listen(port, () => {
@@ -476,13 +492,14 @@ The new route for validated form become:
 const express = require('express');
 const router = express.Router();
 const { body, validationResult } = require('express-validator');
+
 // GET route to display the contact form
-app.get('/contact-val', (req, res) => {
+router.get('/contact_val', (req, res) => {
     res.render('contact_val', { errors: [], submittedName: null });
 });
 
 // POST route to handle form submission
-app.post('/contact-val', [
+router.post('/contact_val', [
     body('name').notEmpty().withMessage('Name is required').trim().isLength({ min: 3, max: 25 }).withMessage('Name must be 3-25 characters'),
     body('message').notEmpty().withMessage('Message is required').trim().isLength({ max: 200 }).withMessage('Message must be under 200 characters'),
     body('email').isEmail().withMessage('Invalid email format').normalizeEmail()
@@ -511,7 +528,8 @@ Inside the route handler, `validationResult(req)` collects any validation errors
 If the data passes validation, the input is read from `req.body`, logged to the console, and the form is re-rendered showing the submitted name as confirmation.
 
 This setup ensures that **all user input is checked and sanitized** before processing, keeping the app secure and user-friendly.  
-**`app.js`:**
+**`app.js`:** 
+We add the new route
 ```
 const express = require('express');
 const app = express();
@@ -523,13 +541,16 @@ app.set('views', path.join(__dirname, 'views'));
 app.use(express.static('public'));
 app.use(express.urlencoded({ extended: true }));
 
-app.use('/contact_val', require('./routes/contact-val'));
+app.use('/', require('./routes/contact'));
+// We add this :
+app.use('/', require('./routes/contact_val'));
 
 app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
 });
 ```
-**`views/contact_val.ejs`:**
+**`views/contact_val.ejs`:**  
+We create the new template
 ```
 <%- include('partials/_navbar') %>
 <h1>Contact Us (Validated)</h1>
@@ -585,7 +606,7 @@ We also need to install ``cookie-parser`` so we store our CSRF secrets in the co
 npm install cookie-parser
 ```
 Then, configure it on our route:  
-**`routes/contact_csrf`**
+**`routes/contact_csrf.js`**
 ```
 const express = require('express');
 const router = express.Router();
@@ -594,14 +615,14 @@ const { body, validationResult } = require('express-validator');
 
 
 // GET route to show the contact form
-router.get('/', (req, res) => {
+router.get('/contact_csrf', (req, res) => {
     res.render('contact_csrf', { errors: [],csrfToken: req.csrfToken(), submittedName: null });
 });
 
 // POST route to handle form submission
-router.post('/',[
+router.post('/contact_csrf',[
     body('name').notEmpty().withMessage('Name is required').trim().isLength({ min: 3, max: 25 }).withMessage('Name must be 3-25 characters'),
-    body('message').notEmpty().withMessage('Message is required').trim().isLength({ max: 200 }).withMessage('Message must be under 200 characters'),
+    body('message').notEmpty().withMessage('Message is required').trim().isLength({ min: 10, max: 200 }).withMessage('Message must be under 200 characters'),
     body('email').isEmail().withMessage('Invalid email format').normalizeEmail()
 ], (req, res) => {
     const { name, message } = req.body;
@@ -638,13 +659,16 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.static('public'));
 app.use(express.urlencoded({ extended: true }));
+
 // adding csurf middleware
 const csrfProtection = csrf({ cookie: true });
 app.use(cookieParser());
 app.use(csrfProtection);
 
-
-app.use('/contact_csrf', require('./routes/contact_csrf'));
+app.use('/', require('./routes/contact'));
+app.use('/', require('./routes/contact_val'));
+// the new route
+app.use('/', require('./routes/contact_csrf'));
 
 app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);

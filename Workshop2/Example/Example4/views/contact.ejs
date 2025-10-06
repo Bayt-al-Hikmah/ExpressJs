@@ -1,0 +1,13 @@
+<%- include('partials/_navbar') %>
+<h1>Contact Us</h1>
+<form action="/contact" method="POST">
+    <label for="name">Name:</label><br>
+    <input type="text" id="name" name="name" required><br><br>
+    <label for="message">Message:</label><br>
+    <textarea id="message" name="message" required></textarea><br><br>
+    <button type="submit">Submit</button>
+</form>
+<% if (submittedName) { %>
+    <h2>Thanks for your message, <%= submittedName %>!</h2>
+<% } %>
+<%- include('partials/_footer') %>

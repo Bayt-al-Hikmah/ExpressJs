@@ -144,7 +144,7 @@ app.get('/search', (req, res) => {
     }
 });
 ```
-With this route in place, visiting `http://localhost:3000/search?query=node+tutorials` will display the message You are searching for: node tutorials. If the query string is missing (for example, if you just go to `/search`), the server will return **Please provide a search query.**
+With this route in place, visiting `http://localhost:3000/search?query=node+tutorials` will display the message ``You are searching for: node tutorials``. If the query string is missing (for example, if you just go to `/search`), the server will return ``Please provide a search query.``.
 ## Building a Simple JSON API
 So far, we’ve created routes that return simple text responses, but modern web applications often need to communicate with other systems, like mobile apps or JavaScript front-ends. This is where APIs (Application Programming Interfaces) come in. APIs allow our backend to send structured data, typically in JSON (JavaScript Object Notation) format, which other applications can easily understand and use.
 Our goal is to build a simple API endpoint that:

@@ -1,0 +1,19 @@
+
+<%- include('partials/_navbar') %>
+<main>
+<% if (Quotes.length > 0) { %>
+
+<div class="quotes-container">
+    <% Quotes.forEach(quote => {%>
+        <div class="quote">
+            <div class="quote-text"><p>"<%= quote.quote %>"</p></div>
+            <div class="author">- <%= quote.author %></div>
+        </div>
+
+    <% }); %>
+    </div>
+<% }else{ %>
+    <div class="result">No quotes available. Be the first to <a href="/share">share a quote</a>!</div>
+<% } %>
+</main>
+<%- include('partials/_footer') %>

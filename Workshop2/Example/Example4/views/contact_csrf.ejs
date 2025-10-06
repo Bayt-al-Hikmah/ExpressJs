@@ -1,0 +1,34 @@
+<%- include('partials/_navbar') %>
+<h1>Contact Us (CSRF Protected)</h1>
+<form method="POST" action="/contact_csrf">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <label for="name">Name:</label><br>
+    <input type="text" id="name" name="name" value="<%= submittedName || '' %>"><br>
+    <% errors.forEach(error => { %>
+        <% if (error.path === 'name') { %>
+            <span style="color:red;"><%= error.msg %></span><br>
+        <% } %>
+    <% }) %>
+
+    <label for="email">Email:</label><br>
+    <input type="email" id="email" name="email"><br>
+    <% errors.forEach(error => { %>
+        <% if (error.path === 'email') { %>
+            <span style="color:red;"><%= error.msg %></span><br>
+        <% } %>
+    <% }) %>
+
+    <label for="message">Message:</label><br>
+    <textarea id="message" name="message"></textarea><br>
+    <% errors.forEach(error => { %>
+        <% if (error.path === 'message') { %>
+            <span style="color:red;"><%= error.msg %></span><br>
+        <% } %>
+    <% }) %>
+
+    <button type="submit">Submit</button>
+</form>
+<% if (submittedName && errors.length === 0) { %>
+    <h2>Thanks for your message, <%= submittedName %>!</h2>
+<% } %>
+<%- include('partials/_footer') %>
