@@ -915,18 +915,18 @@ Let’s allow users to upload profile pictures (avatars) using the `multer` midd
 ```bash
 npm install multer
 ```
-
+Now we create the route that serve uploading files
 **`routes/profile.js`:**
 
 ```javascript
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
-const { users } = require('./data');
 const router = express.Router();
 
 const requireLogin = (req, res, next) => {
-    if (!req.session.username) {
+    const username = req.session.user?.username || null;
+    if (!username) {
         req.session.messages = [{ category: 'danger', message: 'You must be logged in to access this page.' }];
         return res.redirect('/login');
     }
@@ -946,32 +946,106 @@ const upload = multer({
     }
 });
 
-router.get('/', requireLogin, (req, res) => {
-    const user = users[req.session.username];
-    res.render('profile', { user, username: req.session.username, messages: req.session.messages || [] });
+router.get('/', requireLogin, async (req, res) => {
+    const username = req.session.user?.username || null;
+    const user = app.locals.users[username];
+    await req.session.save();
     req.session.messages = [];
+    res.render('profile', { user, username: username, messages: req.session.messages || [] });
 });
 
-router.post('/', requireLogin, upload.single('avatar'), (req, res) => {
+router.post('/', requireLogin, upload.single('avatar'), async (req, res) => {
+    const username = req.session.user?.username || null;
     if (!req.file) {
         req.session.messages = [{ category: 'danger', message: 'No file selected or invalid file type.' }];
+        await req.session.save();
         return res.redirect('/profile');
     }
     const filename = req.file.filename;
-    users[req.session.username].avatar = filename;
+    app.locals.users[username].avatar = filename;
     req.session.messages = [{ category: 'success', message: 'Avatar updated!' }];
+    await req.session.save();
     res.redirect('/profile');
 });
 
 module.exports = router;
 ```
 
-This router handles profile viewing and updating. Multer's `single` method processes one file named 'avatar'. The filename is stored in the user object for display. Configure `multer` to store files in `public/avatars` with allowed extensions. Multer's configuration includes destination folders and file filters to restrict types, preventing uploads of executables or oversized files. Create the `public/avatars` folder before running the app.
+
+ **GET /profile**
+
+When a user visits `/profile`, the server first ensures that the user is logged in before granting access to their profile page.
+
+1. **Access Control (Middleware):**  
+    The `requireLogin` middleware checks if `req.session.user?.username` exists.
+    
+    - If **no active session** is found (meaning the user isn’t logged in), a **danger message** (`"You must be logged in to access this page."`) is stored in the session.
+        
+    - The user is then redirected to the `/login` page.
+        
+2. **Profile Rendering:**  
+    If the user is logged in, the server retrieves the user’s data from the in-memory `users` object using their session username (`users[req.session.username]`).
+    
+3. **Flash Messages:**  
+    Any messages stored in the session (like success or error notifications) are passed to the template and displayed on the profile page.  
+    After rendering, the message list is cleared to prevent repetition.
+    
+4. **Response:**  
+    Finally, the profile page (`profile.ejs`) is rendered with the following data:
+    
+    - The `user` object (containing info like avatar filename)
+        
+    - The logged-in `username`
+        
+    - Any temporary `messages`
+        
+
+This ensures that only authenticated users can access their personal profile page and view any feedback messages.
+
+
+**POST /profile**
+
+When the user submits the form to update their avatar, the server processes the uploaded image and updates the user’s profile.
+
+- **Access Control (Middleware):**  
+    Just like the GET route, the `requireLogin` middleware ensures that only logged-in users can upload avatars.
+    
+- **File Upload Handling (Multer Configuration):**  
+    The route uses **Multer**, a Node.js middleware for handling file uploads.  
+    It is configured as follows:
+    
+    - **Destination:**  
+        Files are temporarily stored in the `public/avatars/` directory.  
+        This allows avatars to be publicly accessible through static file serving.
+        
+    - **File Filter:**  
+        A custom file filter checks the uploaded file’s extension using `path.extname()`.  
+        Only image files with extensions `.png`, `.jpg`, `.jpeg`, or `.gif` are accepted.  
+        If another type of file is uploaded (e.g., `.exe`, `.pdf`), Multer rejects it and triggers an error: ``Only images are allowed``
+        
+    This configuration ensures the server only accepts valid image formats and prevents uploading potentially harmful files.
+    
+- **File Upload Execution:**  
+    `upload.single('avatar')` processes a **single file** from the form field named `avatar`.  
+    The uploaded file’s metadata (e.g., filename, destination, size) becomes available in `req.file`.
+    
+- **Validation:**  
+    After the upload:
+    
+    - If no file was uploaded or the file type was invalid, a **danger message** (`"No file selected or invalid file type."`) is stored, and the user is redirected back to `/profile`.
+        
+- **Profile Update:**  
+    If the upload is successful, the filename (`req.file.filename`) is saved to the logged-in user’s record in the `users` object:
+    
+    `users[username].avatar = filename;`
+    
+- **Feedback and Redirect:**  
+    A **success message** (“Avatar updated!”) is stored in the session, and the user is redirected back to `/profile`, where the new avatar will be displayed.
 
 **`views/profile.ejs`:**
 
 ```html
-<%- include('layout') %>
+<%- include('partial/_navbar') %>
 <div class="container">
     <h1>Welcome, <%= user.username %></h1>
 
@@ -989,9 +1063,187 @@ This router handles profile viewing and updating. Multer's `single` method proce
         <button type="submit" class="btn btn-primary">Upload</button>
     </form>
 </div>
+<%- include('partial/_footer') %>
 ```
 
-The form uses `enctype="multipart/form-data"` to support file uploads. Conditional rendering shows the avatar if available. The `enctype="multipart/form-data"` attribute is crucial for file uploads. `multer` sanitizes and saves files securely, and the `fileFilter` ensures only images are accepted.
+The form uses `enctype="multipart/form-data"` to support file uploads. Conditional rendering shows the avatar if available. The `enctype="multipart/form-data"` attribute is crucial for file uploads. `multer` sanitizes and saves files securely, and the `fileFilter` ensures only images are accepted.  
+
+Now we edit or ``app.js`` to include the new route
+**``app.js``**
+```
+require('dotenv').config();
+const express = require('express');
+const { ironSession } = require('iron-session/express');
+const authRoutes = require('./routes/auth');
+const wiki = require('./routes/wiki');
+const profile = require('./routes/profile');
+
+const app = express();
+const port = 3000;
+
+app.set('view engine', 'ejs');
+app.use(express.static('public'));
+app.use(express.urlencoded({ extended: true }));
+
+app.use(
+  ironSession({
+    cookieName: 'session',
+    password: process.env.SESSION_SECRET || 'a-very-long-random-secret-key-change-this!',
+    cookieOptions: {
+      secure: process.env.NODE_ENV === 'production', // only over HTTPS in production
+      httpOnly: true,
+      sameSite: 'lax',
+      maxAge: 15 * 60,
+    },
+  })
+);
+// Database
+app.locals.users = {}; 
+app.locals.pages = {};
+
+app.use(authRoutes);
+app.use(wiki);
+app.use(profile);
+
+app.get('/', (req, res) => {
+  const username = req.session.user?.username || null;
+  const messages = req.session.messages || [];
+
+  res.render('index', { username, messages });
+
+  req.session.messages = [];
+});
+
+app.listen(port, () => {
+    console.log(`Server running at http://localhost:${port}`);
+});
+```
+### Creating the Mildware folder
+We noticed that the requireLogin middleware is declared in both ``wiki.js`` and ``profile.js``, which means we’re repeating ourselves. To follow the DRY (Don’t Repeat Yourself) principle, we can refactor this by creating a dedicated middlewares folder.  
+Inside this folder, we’ll add a new file (for example, ``logincheck.js``) and move the requireLogin function there. Then, we can simply import it wherever it’s needed, such as in ``wiki.js`` and ``profile.js``.
+**``middlewares/loginCheck.js``**
+
+```
+const requireLogin = async (req, res, next) => {
+    const username = req.session.user?.username || null;
+    if (!username) {
+        await req.session.messages = [
+            { category: 'danger', message: 'You must be logged in to access this page.' }
+        ];
+    
+        return res.redirect('/login');
+    }
+    next();
+};
+
+module.exports = requireLogin;
+```
+We can also move the `multer` configuration into the `middleware` folder to keep our codebase cleaner and more organized.    
+To do this, we’ll create a new file named **`middleware/upload.js`** that will contain all the upload-related logic.
+
+**`middlwares/upload.js`**
+```
+const multer = require('multer');
+const path = require('path');
+
+// Configure storage and file filtering
+const upload = multer({
+    dest: 'public/avatars/', // You can make this dynamic if needed
+    fileFilter: (req, file, cb) => {
+        const allowedExtensions = ['.png', '.jpg', '.jpeg', '.gif'];
+        const ext = path.extname(file.originalname).toLowerCase();
+
+        if (allowedExtensions.includes(ext)) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only images are allowed'));
+        }
+    }
+});
+
+module.exports = upload;
+
+```
+Now, we update the ``wiki.js`` and ``profile.js`` files we remove the duplicate ``requireLogin`` and ``multer`` setup code from both files and replace them with imports of the middleware functions we created earlier.  
+This makes our routes easier to read, reduces repetition, and ensures consistent behavior across the application.
+**`routes/wiki.js`:**
+```
+const express = require('express');
+const { body, validationResult } = require('express-validator');
+const requireLogin = require('../middlewares/loginCheck.js');
+
+const router = express.Router();
+
+router.get('/wiki/:pageName', (req, res) => {
+    const pageName = req.params.pageName;
+    const page = app.locals.pages[pageName];
+    const username = req.session.user?.username || null;
+    if (!page) {
+        return res.status(404).render('404', { username: username, messages: [] });
+    }
+    page.htmlContent = page.content;
+    res.render('wiki_page', { page, pageName, username: username, messages: [] });
+});
+
+router.get('/create', requireLogin, async (req, res) => {
+    const username = req.session.user?.username || null;
+    req.session.messages = [];
+    await req.session.save();
+    res.render('create_page', { username: username, errors: [], messages: req.session.messages || [] });
+});
+
+router.post('/create', requireLogin, [
+    body('title').notEmpty().withMessage('Page title is required').trim(),
+    body('content').notEmpty().withMessage('Content is required')
+], async (req, res) => {
+    const username = req.session.user?.username || null;
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
+        await req.session.save();
+        return res.redirect('/create');
+    }
+    const { title, content } = req.body;
+    app.locals.pages[title] = { content, author: username};
+    res.redirect(`/wiki/${title}`);
+});
+
+module.exports = router;
+```
+**`routes/profile.js`:**
+```
+const express = require('express');
+const path = require('path');
+const requireLogin = require('../middlewares/loginCheck.js');
+const upload = require('../middleware/upload');
+
+const router = express.Router();
+
+
+router.get('/', requireLogin, async (req, res) => {
+    const username = req.session.user?.username || null;
+    const user = app.locals.users[username];
+    await req.session.save();
+    req.session.messages = [];
+    res.render('profile', { user, username: username, messages: req.session.messages || [] });
+});
+
+router.post('/', requireLogin, upload.single('avatar'), async (req, res) => {
+    const username = req.session.user?.username || null;
+    if (!req.file) {
+        req.session.messages = [{ category: 'danger', message: 'No file selected or invalid file type.' }];
+        await req.session.save();
+        return res.redirect('/profile');
+    }
+    const filename = req.file.filename;
+    app.locals.users[username].avatar = filename;
+    req.session.messages = [{ category: 'success', message: 'Avatar updated!' }];
+    await req.session.save();
+    res.redirect('/profile');
+});
+
+module.exports = router;
+```
 
 ## A Journey Through CSS Styling
 ### Act I: The Specific Approach (Class-per-Element)
