@@ -1068,7 +1068,7 @@ When the user submits the form to update their avatar, the server processes the 
 
 The form uses `enctype="multipart/form-data"` to support file uploads. Conditional rendering shows the avatar if available. The `enctype="multipart/form-data"` attribute is crucial for file uploads. `multer` sanitizes and saves files securely, and the `fileFilter` ensures only images are accepted.  
 
-Now we edit or ``app.js`` to include the new route
+Now we edit or ``app.js`` to include the new route.  
 **``app.js``**
 ```
 require('dotenv').config();
@@ -1120,7 +1120,7 @@ app.listen(port, () => {
 ```
 ### Creating the Mildware folder
 We noticed that the requireLogin middleware is declared in both ``wiki.js`` and ``profile.js``, which means we’re repeating ourselves. To follow the DRY (Don’t Repeat Yourself) principle, we can refactor this by creating a dedicated middlewares folder.  
-Inside this folder, we’ll add a new file (for example, ``logincheck.js``) and move the requireLogin function there. Then, we can simply import it wherever it’s needed, such as in ``wiki.js`` and ``profile.js``.
+Inside this folder, we’ll add a new file (for example, ``logincheck.js``) and move the requireLogin function there. Then, we can simply import it wherever it’s needed, such as in ``wiki.js`` and ``profile.js``.  
 **``middlewares/loginCheck.js``**
 
 ```
@@ -1165,7 +1165,7 @@ module.exports = upload;
 
 ```
 Now, we update the ``wiki.js`` and ``profile.js`` files we remove the duplicate ``requireLogin`` and ``multer`` setup code from both files and replace them with imports of the middleware functions we created earlier.  
-This makes our routes easier to read, reduces repetition, and ensures consistent behavior across the application.
+This makes our routes easier to read, reduces repetition, and ensures consistent behavior across the application.  
 **`routes/wiki.js`:**
 ```
 const express = require('express');
