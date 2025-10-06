@@ -1244,7 +1244,59 @@ router.post('/', requireLogin, upload.single('avatar'), async (req, res) => {
 
 module.exports = router;
 ```
+### Handling Unknown Routes
+Our app works great so far, but there’s still a small problem what happens if a user tries to visit a random, non-existing route like `/random-route`?  
+By default, **Express** will return the following HTML page as a response:
 
+```
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot GET /roundom-route</pre>
+</body>
+</html>
+```
+
+This is good  the app doesn’t crash and clearly indicates that the route doesn’t exist.  
+However, in a web application, we usually want to show a more user-friendly 404 page instead of this default message.
+
+We can override this default behavior by adding a middleware at the end of our route stack to handle unknown routes.
+
+**``middleware/404.js``**  
+First, create a new middleware file that renders a custom 404 page:
+```
+module.exports = (req, res) => {
+  res.status(404).render('404', {
+    title: 'Page Not Found',
+    url: req.originalUrl
+  });
+};
+```
+**``views/404.ejs``**  
+Next, create a `404.ejs` view to display a friendly message to the user:
+```
+<%- include('partial/_navbar')
+  <h1>404 - Page Not Found</h1>
+  <p>Sorry, the page "<%= url %>" doesn’t exist.</p>
+  <a href="/">Go back to Home</a>
+<%- include('partial/_footer')
+```
+Finally, import and use this middleware at the very end of your middleware stack in **`app.js`**:
+
+```
+const notFoundHandler = require('./middleware/404');
+
+// ... all other routes and middleware here ...
+
+// Handle unknown routes
+app.use(notFoundHandler);
+```
+With this in place, visiting a non-existent page such as `/random-url` will render your custom `404.ejs` template instead of the default plain HTML page.  
+This improves the overall user experience and keeps the app’s design consistent across all pages.
 ## A Journey Through CSS Styling
 ### Act I: The Specific Approach (Class-per-Element)
 When we first begin styling our web pages, the natural instinct is to give each element its own class and style it directly. For example:
