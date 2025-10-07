@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MyApp</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="container header-inner">
+            <a class="brand" href="/">MyApp</a>
+            <nav class="main-nav">
+                <% if (username) { %>
+                    <span class="greet">Hello, <%= username %></span>
+                    <a href="/logout" class="nav-link">Logout</a>
+                <% } else { %>
+                    <a href="/login" class="nav-link">Login</a>
+                    <a href="/register" class="nav-link">Register</a>
+                <% } %>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container">
+        <% if (messages && messages.length > 0) { %>
+            <div class="flash-wrapper">
+                <% messages.forEach(message => { %>
+                    <div class="flash flash-<%= message.category.toLowerCase() %>">
+                        <span class="flash-message"><%= message.message %></span>
+                        <button class="flash-dismiss" onclick="this.parentElement.style.display='none'">×</button>
+                    </div>
+                <% }); %>
+            </div>
+        <% } %>
+
+        <section class="content">

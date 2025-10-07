@@ -1,0 +1,26 @@
+<%- include('partials/_navbar') %>
+<h1 class="page-title">Log in</h1>
+
+<form method="POST" class="form-card">
+    <label for="username">Username</label>
+    <input id="username" name="username" type="text" required>
+    <% errors.forEach(error => { %>
+        <% if (error.path === 'username') { %>
+            <span style="color:red;"><%= error.msg %></span><br>
+        <% } %>
+    <% }) %>
+
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" required>
+    <% errors.forEach(error => { %>
+        <% if (error.path === 'password') { %>
+            <span style="color:red;"><%= error.msg %></span><br>
+        <% } %>
+    <% }) %>
+
+    <div class="form-actions">
+        <button type="submit" class="btn btn-success">Login</button>
+        <a href="/register" class="btn btn-link">Create account</a>
+    </div>
+</form>
+<%- include('partials/_footer') %>

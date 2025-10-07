@@ -1,0 +1,31 @@
+<%- include('partials/_navbar') %>
+<h1 class="page-title">Create a Wiki Page</h1>
+
+<form method="POST" class="form-card">
+    <label for="title">Page Title</label>
+    <input id="title" name="title" type="text" required>
+    <% errors.forEach(error => { %>
+        <% if (error.path === 'title') { %>
+            <span style="color:red;"><%= error.msg %></span><br>
+        <% } %>
+    <% }) %>
+
+    <label for="content">Content (Markdown supported)</label>
+    <textarea id="content" name="content" rows="12" placeholder="# Heading
+Write your text here...
+- bullet list
+**bold text**
+*italic text*"></textarea>
+    <% errors.forEach(error => { %>
+        <% if (error.path === 'content') { %>
+            <span style="color:red;"><%= error.msg %></span><br>
+        <% } %>
+    <% }) %>
+
+    <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Create Page</button>
+    </div>
+</form>
+
+
+<%- include('partials/_footer') %>

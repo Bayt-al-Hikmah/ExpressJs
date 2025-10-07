@@ -22,7 +22,8 @@ app.locals.pages = {}; // e.g., { 'HomePage': { content: 'Welcome!', author: 'ad
 
 ```
 
-This simple object structure mimics key-value storage: users are indexed by username, and pages by their titles. Each user entry holds a password and an optional avatar. Pages store content, author, and later, flags for content type.
+This simple object structure mimics key-value storage: users are indexed by username, and pages by their titles. Each user entry holds a password and an optional avatar. Pages store content, author, and later, flags for content type.  
+We access them inside our routes by using `req.app.locals.users` and for pages `req.app.locals.pges`
 
 ### The Express `iron-session` Middleware
 
@@ -33,13 +34,13 @@ We can safely store lightweight information, such as a username or user ID, insi
 **Install required packages**:
 
 ```bash
-npm install express iron-session ejs marked express-validator multer
+npm install express iron-session ejs marked express-validator multer dotenv
 ```
 
-These packages provide: Express for the web framework, iron-session for sessions, EJS for templating, marked for Markdown parsing, express-validator for input validation, and multer for file uploads. Always install dependencies at the start to ensure your environment is ready.
+These packages provide: Express for the web framework, iron-session for sessions, EJS for templating, marked for Markdown parsing, dotenv for accessing environment variables, express-validator for input validation, and multer for file uploads. Always install dependencies at the start to ensure your environment is ready.
 
 ### Creating the Routes
-Create a `routes` folder with an `auth.js` file for authentication routes and a `wiki.js` file for wiki-related routes.
+Create a `routes` folder with an `auth.js` file for authentication routes.
 
 **`routes/auth.js`:**
 
@@ -51,7 +52,7 @@ const router = express.Router();
 router.get('/register', (req, res) => {
     
     req.session.messages = [];
-    res.render('register', { errors: [], messages: req.session.messages || [] });
+    res.render('register', { errors: [], messages: req.session.messages || [] ,username: req.session.user?.username || null});
 });
 
 router.post('/register', [
@@ -66,13 +67,13 @@ router.post('/register', [
     }
 
     const { username, password } = req.body;
-    if (app.locals.users[username]) {
+    if (req.app.locals.users[username]) {
         req.session.messages = [{ category: 'danger', message: 'Username already exists!' }];
         await req.session.save();
         return res.redirect('/register');
     }
 
-    app.locals.users[username] = { password, avatar: null };
+    req.app.locals.users[username] = { password, avatar: null };
     req.session.messages = [{ category: 'success', message: 'Registration successful! Please log in.' }];
     await req.session.save();
     res.redirect('/login');
@@ -82,7 +83,7 @@ router.get('/login', async (req, res) => {
       const messages = req.session.messages || [];
       req.session.messages = [];
       await req.session.save();
-      res.render('login', { errors: [], messages });
+      res.render('login', { errors: [], messages ,username: req.session.user?.username || null});
 });
 
 router.post('/login', [
@@ -97,7 +98,7 @@ router.post('/login', [
     }
 
     const { username, password } = req.body;
-    const user = app.locals.users[username];
+    const user = req.app.locals.users[username];
     if (user && user.password === password) {
         req.session.user = { username };
         req.session.messages = [{ category: 'success', message: 'Login successful!' }];
@@ -143,11 +144,10 @@ When the registration form is submitted, the server receives the `username` and 
     - If it does, a danger message (“Username already exists!”) is stored in the session, and the user is redirected back to `/register`.
         
 3. **Secure Password Storage:**  
-    If the username is new, the password is **securely hashed using bcrypt** before being saved.  
-    Hashing ensures that even if the user data were exposed, real passwords would remain protected.
+    If the username is new, it will create the username with the password and save them.  
     
 4. **User Creation:**  
-    The new user is stored in the `users` object with the hashed password and a placeholder for the avatar field.
+    The new user is stored in the `app.locals.users` object with the  password and a placeholder for the avatar field.
     
 5. **Feedback and Redirect:**  
     A success flash message (“Registration successful! Please log in.”) is saved, and the user is redirected to the `/login` page.
@@ -170,10 +170,10 @@ When the login form is submitted:
     If any are missing, validation errors are stored as messages, and the user is redirected back to `/login`.
     
 2. **User Lookup:**  
-    The server searches the `users` object for a user matching the provided username.
+    The server searches the `app.locals.users` object for a user matching the provided username.
     
 3. **Password Verification:**  
-    If the user exists, `bcrypt.compare()` verifies the submitted password against the stored password.
+    If the user exists, it verifies the submitted password against the stored password.
     
 4. **Successful Login:**  
     If verification succeeds, a new session is created and the user’s data (only the username) is stored inside `req.session.user`.  
@@ -319,7 +319,9 @@ This template extends the layout and provides a registration form. It displays f
 <%- include('partials/_footer') %>
 ```
 
-Similar to registration, this login form uses EJS to show errors and includes a link to register, guiding new users seamlessly.
+Similar to registration, this login form uses EJS to show errors and includes a link to register, guiding new users seamlessly.  
+
+And finally we create the ``index.ejs`` template.  
 **`views/index.ejs`:**
 
 ```html
@@ -427,7 +429,7 @@ body {
     background: var(--card);
     border-radius: 10px;
     border: 1px solid rgba(16,24,40,0.04);
-    max-width: 520px;
+    width: 100%;
 }
 .form-card label { font-size: 0.9rem; color: var(--muted); }
 .form-card input[type="text"],
@@ -486,18 +488,21 @@ This CSS file uses CSS variables for theming, a modern approach for easy customi
 ```javascript
 require('dotenv').config();
 const express = require('express');
-const { ironSession } = require('iron-session/express');
+const { getIronSession } = require('iron-session');
 const authRoutes = require('./routes/auth');
 
 const app = express();
 const port = 3000;
 
+app.locals.users = {}; // e.g., { 'username': { password: 'password123', avatar: null } }
+app.locals.pages = {}; // e.g., { 'HomePage': { content: 'Welcome!', author: 'admin' } }
+
 app.set('view engine', 'ejs');
 app.use(express.static('public'));
 app.use(express.urlencoded({ extended: true }));
 
-app.use(
-  ironSession({
+app.use(async (req, res, next) => {
+   const session = await getIronSession(req, res, {
     cookieName: 'session',
     password: process.env.SESSION_SECRET || 'a-very-long-random-secret-key-change-this!',
     cookieOptions: {
@@ -507,10 +512,10 @@ app.use(
       maxAge: 15 * 60,
     },
   })
-);
-// Database
-app.locals.users = {}; 
-app.locals.pages = {};
+  req.session = session; 
+  next();
+});
+
 
 app.use(authRoutes);
 
@@ -526,6 +531,7 @@ app.get('/', (req, res) => {
 app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
 });
+
 ```
 There are many security risks when storing and managing sessions in web applications. Poor session handling can expose users to attacks like XSS (Cross-Site Scripting), CSRF (Cross-Site Request Forgery), session hijacking, and session fixation. For example, if session tokens are stored in localStorage or accessible JavaScript variables, an attacker could steal them through malicious scripts or browser extensions. Similarly, without proper cookie configuration, attackers could trick the browser into sending valid session cookies from another site.
 
@@ -541,7 +547,9 @@ This main file sets up the Express app, configures the view engine (EJS for dyna
 ### Environment Variables
 Environment variables are used to store sensitive configuration data outside your source code, keeping your application both secure and flexible.
 
-In this project, the session’s secret key is stored in an environment variable named SESSION_SECRET.  
+In this project, the session’s secret key is stored in an environment variable named SESSION_SECRET. It should be at least 32 characters long to ensure security.
+
+We also use another environment variable, NODE_ENV, to specify the current environment whether the server is running in development or production mode.  
 We create a file called .env and define our variables inside it:
 **``.env``**
 ```
@@ -567,7 +575,6 @@ The `marked` library is a fast, reliable Markdown parser that outputs HTML. It's
 ```javascript
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const marked = require('marked');
 
 const router = express.Router();
 
@@ -581,9 +588,10 @@ const requireLogin = async (req, res, next) => {
     next();
 };
 
-router.get('/wiki/:pageName', (req, res) => {
+router.get('/wiki/:pageName', async (req, res) => {
+    const { marked } = await import('marked');
     const pageName = req.params.pageName;
-    const page = app.locals.pages[pageName];
+    const page = req.app.locals.pages[pageName];
     const username = req.session.user?.username || null;
     if (!page) {
         return res.status(404).render('404', { username: username, messages: [] });
@@ -611,19 +619,21 @@ router.post('/create', requireLogin, [
         return res.redirect('/create');
     }
     const { title, content } = req.body;
-    app.locals.pages[title] = { content, author: username, isMarkdown: true };
+    req.app.locals.pages[title] = { content, author: username, isMarkdown: true };
     res.redirect(`/wiki/${title}`);
 });
 
 module.exports = router;
 ```
- **GET /wiki/:pageName**
+We can notice that for marked, we import it using const { marked } = await import('marked');. This is because it uses the ES Module (ESM) system instead of CommonJS (CJS). In ESM, we use the import keyword to load modules, while in CJS we use require(). The await import() form allows dynamic importing, meaning the module is loaded only when needed rather than at the start of the program. This makes the code more flexible and compatible with modern JavaScript standards.  
+
+**GET /wiki/:pageName**
 
 When a user visits `/wiki/:pageName`, the server:
 
 -  Extracts the `pageName` from the URL parameters.
     
--  Looks up the page in `app.locals.pages`.
+-  Looks up the page in `req.app.locals.pages`.
     
 -  If the page doesn’t exist, it responds with a 404 page.
     
@@ -678,7 +688,6 @@ When a logged-in user submits the form to create a new wiki page:
 
 ```html
 <%- include('partials/_navbar') %>
-<%- include('layout') %>
 <h1><%= pageName %></h1>
 <p><em>By: <%= page.author %></em></p>
 <hr>
@@ -722,16 +731,7 @@ Write your text here...
     </div>
 </form>
 
-<div class="card" style="margin-top:16px;">
-    <h3>Markdown Quick Reference</h3>
-    <ul>
-        <li><code># Heading</code> → Heading</li>
-        <li><code>**bold**</code> → <strong>bold</strong></li>
-        <li><code>*italic*</code> → <em>italic</em></li>
-        <li><code>- Item</code> → bullet list</li>
-        <li><code>[Link](https://example.com)</code> → link</li>
-    </ul>
-</div>
+
 <%- include('partials/_footer') %>
 ```
 
@@ -741,19 +741,22 @@ Now we update our app.js so we include the new routes
 ```
 require('dotenv').config();
 const express = require('express');
-const { ironSession } = require('iron-session/express');
+const { getIronSession } = require('iron-session');
 const authRoutes = require('./routes/auth');
 const wiki = require('./routes/wiki');
 
 const app = express();
 const port = 3000;
 
+app.locals.users = {}; // e.g., { 'username': { password: 'password123', avatar: null } }
+app.locals.pages = {}; // e.g., { 'HomePage': { content: 'Welcome!', author: 'admin' } }
+
 app.set('view engine', 'ejs');
 app.use(express.static('public'));
 app.use(express.urlencoded({ extended: true }));
 
-app.use(
-  ironSession({
+app.use(async (req, res, next) => {
+   const session = await getIronSession(req, res, {
     cookieName: 'session',
     password: process.env.SESSION_SECRET || 'a-very-long-random-secret-key-change-this!',
     cookieOptions: {
@@ -763,10 +766,10 @@ app.use(
       maxAge: 15 * 60,
     },
   })
-);
-// Database
-app.locals.users = {}; 
-app.locals.pages = {};
+  req.session = session; 
+  next();
+});
+
 
 app.use(authRoutes);
 app.use(wiki);
@@ -783,6 +786,7 @@ app.get('/', (req, res) => {
 app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
 });
+
 ```
 
 ### Using CKEditor in Express
@@ -790,19 +794,16 @@ app.listen(port, () => {
 Markdown is great, but some users prefer a visual editor. **CKEditor** provides a WYSIWYG (What You See Is What You Get) interface, outputting HTML directly. We’ll use the CKEditor 5 editor. WYSIWYG editors like CKEditor allow non-technical users to format text visually, similar to word processors. It generates HTML under the hood, but we must sanitize outputs to prevent XSS. CKEditor includes built-in security features, but always validate on the server.  
 First we install it using 
 **Install CKEditor**:
-
-```bash
-npm install @ckeditor/ckeditor5-build-classic
-```
+We first download the copy `ckeditor.js` from `materials` folder and store it inside ``public/script`` folder.  
 Now, let’s create a reusable layout file for the CKEditor setup.  
 This will make it easy to include the editor wherever it’s needed for example, on our “create_page.ejs” page.
-**`views/partial/_ckeditor.ejs`**
+**`views/partials/_ckeditor.ejs`**
 ```
- <script type="module">
-    import ClassicEditor from '/node_modules/@ckeditor/ckeditor5-build-classic/build/ckeditor.js';
-
+<script src="script/ckeditor.js"> </script>
+ <script >
+ 
     let editorInstance;
-    ClassicEditor.create(document.querySelector('#editor'))
+    ClassicEditor.create(document.querySelector('#content'))
       .then(editor => {
         editorInstance = editor;
       })
@@ -813,7 +814,7 @@ This will make it easy to include the editor wherever it’s needed for example,
     });
   </script>
 ```
-This script initializes **CKEditor 5** on a text area and ensures its HTML content is sent to the server when the form is submitted. The line `import ClassicEditor` loads the CKEditor 5 build from your `node_modules` folder using ES module syntax (`type="module"` is required for this). Then, `ClassicEditor.create(document.querySelector('#editor'))` replaces the textarea with a full-featured rich text editor. When the editor is ready, its instance is stored in `editorInstance`. Before submitting the form, the script takes the HTML content generated by CKEditor using `editorInstance.getData()` and assigns it to the hidden field named `content`. This way, the form sends clean, ready-to-use HTML to your Express backend without needing extra parsing or conversion.  
+This script initializes **CKEditor 5** on a text area and ensures its HTML content is sent to the server when the form is submitted. The line `<script src="script/ckeditor.js"> </script>` loads the CKEditor 5 build from your `public/script` folder. Then, `ClassicEditor.create(document.querySelector('#editor'))` replaces the textarea with a full-featured rich text editor. When the editor is ready, its instance is stored in `editorInstance`. Before submitting the form, the script takes the HTML content generated by CKEditor using `editorInstance.getData()` and assigns it to the hidden field named `content`. This way, the form sends clean, ready-to-use HTML to your Express backend without needing extra parsing or conversion.  
 
 Now we can include the CKEditor partial in our form view. we just include it using  `<%- include('partials/_ckeditor') %>`
 **`views/create_page.ejs`: (updated)**
@@ -871,7 +872,7 @@ const requireLogin = async (req, res, next) => {
 
 router.get('/wiki/:pageName', (req, res) => {
     const pageName = req.params.pageName;
-    const page = app.locals.pages[pageName];
+    const page = req.app.locals.pages[pageName];
     const username = req.session.user?.username || null;
     if (!page) {
         return res.status(404).render('404', { username: username, messages: [] });
@@ -899,7 +900,7 @@ router.post('/create', requireLogin, [
         return res.redirect('/create');
     }
     const { title, content } = req.body;
-    app.locals.pages[title] = { content, author: username};
+    req.app.locals.pages[title] = { content, author: username};
     res.redirect(`/wiki/${title}`);
 });
 
@@ -946,15 +947,15 @@ const upload = multer({
     }
 });
 
-router.get('/', requireLogin, async (req, res) => {
+router.get('/profile', requireLogin, async (req, res) => {
     const username = req.session.user?.username || null;
-    const user = app.locals.users[username];
+    const user = req.app.locals.users[username];
     await req.session.save();
     req.session.messages = [];
     res.render('profile', { user, username: username, messages: req.session.messages || [] });
 });
 
-router.post('/', requireLogin, upload.single('avatar'), async (req, res) => {
+router.post('/profile', requireLogin, upload.single('avatar'), async (req, res) => {
     const username = req.session.user?.username || null;
     if (!req.file) {
         req.session.messages = [{ category: 'danger', message: 'No file selected or invalid file type.' }];
@@ -962,7 +963,7 @@ router.post('/', requireLogin, upload.single('avatar'), async (req, res) => {
         return res.redirect('/profile');
     }
     const filename = req.file.filename;
-    app.locals.users[username].avatar = filename;
+    req.app.locals.users[username].avatar = filename;
     req.session.messages = [{ category: 'success', message: 'Avatar updated!' }];
     await req.session.save();
     res.redirect('/profile');
@@ -1045,9 +1046,9 @@ When the user submits the form to update their avatar, the server processes the 
 **`views/profile.ejs`:**
 
 ```html
-<%- include('partial/_navbar') %>
+<%- include('partials/_navbar') %>
 <div class="container">
-    <h1>Welcome, <%= user.username %></h1>
+    <h1>Welcome, <%= username %></h1>
 
     <div class="avatar-section">
         <% if (user.avatar) { %>
@@ -1063,7 +1064,7 @@ When the user submits the form to update their avatar, the server processes the 
         <button type="submit" class="btn btn-primary">Upload</button>
     </form>
 </div>
-<%- include('partial/_footer') %>
+<%- include('partials/_footer') %>
 ```
 
 The form uses `enctype="multipart/form-data"` to support file uploads. Conditional rendering shows the avatar if available. The `enctype="multipart/form-data"` attribute is crucial for file uploads. `multer` sanitizes and saves files securely, and the `fileFilter` ensures only images are accepted.  
@@ -1073,20 +1074,24 @@ Now we edit or ``app.js`` to include the new route.
 ```
 require('dotenv').config();
 const express = require('express');
-const { ironSession } = require('iron-session/express');
+const { getIronSession } = require('iron-session');
 const authRoutes = require('./routes/auth');
 const wiki = require('./routes/wiki');
 const profile = require('./routes/profile');
 
+
 const app = express();
 const port = 3000;
+
+app.locals.users = {}; // e.g., { 'username': { password: 'password123', avatar: null } }
+app.locals.pages = {}; // e.g., { 'HomePage': { content: 'Welcome!', author: 'admin' } }
 
 app.set('view engine', 'ejs');
 app.use(express.static('public'));
 app.use(express.urlencoded({ extended: true }));
 
-app.use(
-  ironSession({
+app.use(async (req, res, next) => {
+   const session = await getIronSession(req, res, {
     cookieName: 'session',
     password: process.env.SESSION_SECRET || 'a-very-long-random-secret-key-change-this!',
     cookieOptions: {
@@ -1096,15 +1101,14 @@ app.use(
       maxAge: 15 * 60,
     },
   })
-);
-// Database
-app.locals.users = {}; 
-app.locals.pages = {};
+  req.session = session; 
+  next();
+});
+
 
 app.use(authRoutes);
 app.use(wiki);
 app.use(profile);
-
 app.get('/', (req, res) => {
   const username = req.session.user?.username || null;
   const messages = req.session.messages || [];
@@ -1127,10 +1131,10 @@ Inside this folder, we’ll add a new file (for example, ``logincheck.js``) and 
 const requireLogin = async (req, res, next) => {
     const username = req.session.user?.username || null;
     if (!username) {
-        await req.session.messages = [
+        req.session.messages = [
             { category: 'danger', message: 'You must be logged in to access this page.' }
         ];
-    
+        await req.session.save();
         return res.redirect('/login');
     }
     next();
@@ -1141,7 +1145,7 @@ module.exports = requireLogin;
 We can also move the `multer` configuration into the `middleware` folder to keep our codebase cleaner and more organized.    
 To do this, we’ll create a new file named **`middleware/upload.js`** that will contain all the upload-related logic.
 
-**`middlwares/upload.js`**
+**`middlewares/upload.js`**
 ```
 const multer = require('multer');
 const path = require('path');
@@ -1176,7 +1180,7 @@ const router = express.Router();
 
 router.get('/wiki/:pageName', (req, res) => {
     const pageName = req.params.pageName;
-    const page = app.locals.pages[pageName];
+    const page = req.app.locals.pages[pageName];
     const username = req.session.user?.username || null;
     if (!page) {
         return res.status(404).render('404', { username: username, messages: [] });
@@ -1204,31 +1208,30 @@ router.post('/create', requireLogin, [
         return res.redirect('/create');
     }
     const { title, content } = req.body;
-    app.locals.pages[title] = { content, author: username};
+    req.app.locals.pages[title] = { content, author: username};
     res.redirect(`/wiki/${title}`);
 });
-
 module.exports = router;
 ```
 **`routes/profile.js`:**
 ```
 const express = require('express');
-const path = require('path');
 const requireLogin = require('../middlewares/loginCheck.js');
-const upload = require('../middleware/upload');
+const upload = require('../middlewares/upload.js');
 
 const router = express.Router();
 
 
-router.get('/', requireLogin, async (req, res) => {
+
+router.get('/profile', requireLogin, async (req, res) => {
     const username = req.session.user?.username || null;
-    const user = app.locals.users[username];
+    const user = req.app.locals.users[username];
     await req.session.save();
     req.session.messages = [];
     res.render('profile', { user, username: username, messages: req.session.messages || [] });
 });
 
-router.post('/', requireLogin, upload.single('avatar'), async (req, res) => {
+router.post('/profile', requireLogin, upload.single('avatar'), async (req, res) => {
     const username = req.session.user?.username || null;
     if (!req.file) {
         req.session.messages = [{ category: 'danger', message: 'No file selected or invalid file type.' }];
@@ -1236,7 +1239,7 @@ router.post('/', requireLogin, upload.single('avatar'), async (req, res) => {
         return res.redirect('/profile');
     }
     const filename = req.file.filename;
-    app.locals.users[username].avatar = filename;
+    req.app.locals.users[username].avatar = filename;
     req.session.messages = [{ category: 'success', message: 'Avatar updated!' }];
     await req.session.save();
     res.redirect('/profile');
@@ -1266,11 +1269,14 @@ However, in a web application, we usually want to show a more user-friendly 404 
 
 We can override this default behavior by adding a middleware at the end of our route stack to handle unknown routes.
 
-**``middleware/404.js``**  
+**``middlewares/404.js``**  
 First, create a new middleware file that renders a custom 404 page:
 ```
 module.exports = (req, res) => {
+const username = req.session.user?.username || null;
   res.status(404).render('404', {
+    username:username,
+    messages:[{ category: 'danger', message: 'Page don\'t exist' }],
     title: 'Page Not Found',
     url: req.originalUrl
   });
@@ -1279,16 +1285,16 @@ module.exports = (req, res) => {
 **``views/404.ejs``**  
 Next, create a `404.ejs` view to display a friendly message to the user:
 ```
-<%- include('partial/_navbar')
+<%- include('partials/_navbar') %>
   <h1>404 - Page Not Found</h1>
   <p>Sorry, the page "<%= url %>" doesn’t exist.</p>
   <a href="/">Go back to Home</a>
-<%- include('partial/_footer')
+<%- include('partials/_footer') %>
 ```
 Finally, import and use this middleware at the very end of your middleware stack in **`app.js`**:
 
 ```
-const notFoundHandler = require('./middleware/404');
+const notFoundHandler = require('./middlewares/404');
 
 // ... all other routes and middleware here ...
 
