@@ -1055,3 +1055,383 @@ We use `Page.findByTitle(db, pageName)` to retrieve a page’s content from the 
 We didn’t need to make any changes to the `app.js` file.
 
 With this new structure, our code becomes much more readable, easier to maintain, and more scalable. By separating raw SQL queries from the route logic, we achieve a clear separation of concerns  our JavaScript files now focus on application flow, while the models handle all database operations in a clean and reusable way.
+### Using Prisma
+While the `User` class helped organize our code, we were still manually writing SQL queries, which can quickly become difficult to maintain as the application grows. Switching to another database system like PostgreSQL or MySQL would require rewriting most of those queries. Managing relationships, such as linking users to their wiki pages, also introduces extra complexity and repetitive SQL.
+
+This is where **Prisma**, a modern **TypeScript- and JavaScript-friendly ORM**, comes in. Prisma lets us define our database structure using a clean schema file and automatically generates a powerful client for interacting with our data. Instead of writing raw SQL, we use intuitive, object-oriented methods like `prisma.user.create()` or `prisma.page.findUnique()`. This makes database operations safer, easier to read, and portable across multiple database engines, while also providing built-in validation, type safety, and relationship management.
+#### Updating Our Project
+
+We’ll begin by removing the old files `models/User.js`, `models/Page.js`, and `middlewares/dbMiddleware.js`  since Prisma will handle all database interactions for us.
+
+**Install Prisma**  
+Next, we install Prisma 
+```bash
+npm install prisma @prisma/client
+```
+Now we initialize it with SQLite as our database:
+```bash
+npx prisma init --datasource-provider sqlite
+```
+This creates a new `prisma/` folder with a `schema.prisma` file where we’ll define our database models (such as `User` and `Page`), and a `.env` file that stores our database connection URL.  
+**``.env``**
+```bash
+SESSION_SECRET=oihgahahvaaiohaehahvaai594qqfqq61
+NODE_ENV=development
+DATABASE_URL="file:./database.db"
+```
+#### Define Our Prisma models
+Prisma uses its own **Prisma Schema Language (PSL)** to describe the structure of our database including models, their fields, and relationships.
+
+To create and define our models, we open the `prisma/schema.prisma` file. Here, we can define tables like `User` and `Page` as models, specifying their columns, data types, and how they relate to one another. Prisma will then use this schema to generate the corresponding database tables and a fully type-safe client for interacting with them.
+**`prisma/schema.prisma`**
+```prisma
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id            Int      @id @default(autoincrement())
+  username      String   @unique
+  password_hash String   
+  avatar        String?  
+  pages         Page[]
+}
+
+model Page {
+  id        Int      @id @default(autoincrement())
+  title     String   @unique
+  content   String
+  authorId  Int?
+  author    User?    @relation(fields: [authorId], references: [id])
+}
+```
+This Prisma schema defines our database structure and how Prisma connects to it.
+
+The **`datasource`** block specifies the database we’re using here, it’s SQLite, stored in a file named `database.db`.  
+The **`generator`** block tells Prisma to generate a JavaScript client (`@prisma/client`), which we’ll use in our code to interact with the database.
+
+The **`User` model** represents our users table. Each user has:
+- `id`: a unique identifier that auto-increments.
+- `username`: a unique string for login.
+- `password_hash`: the hashed password.
+- `avatar`: an optional string field for storing the avatar filename.
+- `pages`: a one-to-many relation showing that each user can have multiple pages.
+
+The **`Page` model** represents wiki pages. Each page has:
+- `id`: a unique, auto-incrementing identifier.
+- `title`: a unique string for the page title.
+- `content`: the page’s text content.
+- `authorId`: a foreign key linking the page to its author.
+- `author`: a relation connecting the page back to its corresponding user (`User`).
+    
+
+Together, these models define a **one-to-many relationship**  one `User` can have many `Page` entries  while Prisma automatically manages the relationships and underlying foreign keys for us.    
+
+After defining our Prisma models, run the following command to create the database and apply the initial schema:
+```bash
+npx prisma migrate dev --name init
+```
+This command:
+
+- Creates a new SQLite database file (if it doesn’t exist).
+- Applies our schema changes (models) as a migration.
+- Generates the Prisma client, which we can import and use in our Node.js app.
+
+#### Updating The routes
+Now we update the routes to work prisma.  
+**``routes/auth.js``**
+```javascript
+const express = require('express');
+const argon = require('argon2');
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+
+const { body, validationResult } = require('express-validator');
+const router = express.Router();
+
+router.get('/register', async (req, res) => {
+    const messages = req.session.messages || [];
+    const username = req.session.user?.username || null
+    const errors = req.session.errors || []
+    req.session.messages = [];
+    req.session.errors = [];
+    await req.session.save();
+    res.render('register', { errors, messages  ,username });
+});
+
+router.post('/register', [
+    body('username').notEmpty().withMessage('Username is required').trim().isLength({ min: 3, max: 25 }),
+    body('password').notEmpty().withMessage('Password is required').isLength({ min: 6 })
+], async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        req.session.errors = errors.errors;
+        await req.session.save();
+        return res.redirect('/register');
+    }
+
+    const { username, password } = req.body;
+    const existingUser = await prisma.user.findUnique({
+      where: { username },
+    });
+    if (existingUser) {
+      req.session.messages = [{ category: 'danger', message: 'Username already exists!' }]
+      await req.session.save();
+      return res.redirect('/register')
+    }
+
+    try {
+      const password_hash = await argon.hash(password)
+      await prisma.user.create({
+      data: { username, password_hash },
+    });
+      req.session.messages = [{ category: 'success', message: 'Registration successful! Please log in.' }];
+      await req.session.save();
+      return res.redirect('/login');
+    } catch (err) {
+      req.session.messages = [{ category: 'danger', message: 'Error creating user. Please try again.' }]
+      await req.session.save();
+      return res.redirect('/register')
+    }      
+});
+
+router.get('/login', async (req, res) => {
+    const messages = req.session.messages || [];
+    const username = req.session.user?.username || null
+    const errors = req.session.errors || []
+    req.session.messages = [];
+    await req.session.save();
+    return res.render('login', { errors, messages ,username,errors});
+});
+
+router.post('/login', [
+    body('username').notEmpty().withMessage('Username is required'),
+    body('password').notEmpty().withMessage('Password is required')
+], async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        
+        req.session.errors = errors.errors;
+        await req.session.save();
+        return res.redirect('/login');
+    }
+
+    const { username, password } = req.body;
+    const user = await prisma.user.findUnique({
+      where: { username },
+    });
+
+      if (user && await argon.verify(user.password_hash, password)) {
+        req.session.user = { username };
+        req.session.messages = [{ category: 'success', message: 'Login successful!' }];
+        await req.session.save();
+        return res.redirect('/');
+      } else {
+        req.session.messages = [{ category: 'danger', message: 'Invalid username or password.' }];
+        await req.session.save();
+        return res.redirect('/login');
+      }
+});
+
+
+router.get('/logout',  async  (req, res) => {
+    await req.session.destroy();
+    return res.redirect('/login');
+});
+
+module.exports = router;
+```
+We now use **Prisma** as our database layer instead of manually writing SQL queries or using custom models. Prisma automatically generates a **client** (`@prisma/client`) based on the schema we defined earlier, giving us a clean, type-safe API to interact with the database.
+
+We first import `PrismaClient` using `const { PrismaClient } = require('@prisma/client');` then we create client object with `const prisma = new PrismaClient();` ,after that we use `prisma.user.findUnique()` to check if a username already exists, and `prisma.user.create()` to add new users. Prisma handles table creation, data mapping, and relationships behind the scenes making the code more concise, consistent, and easier to maintain as the app grows.  
+
+**``routes/profile.js``**
+```javascript
+const express = require('express');
+const requireLogin = require('../middlewares/loginCheck.js');
+const upload = require('../middlewares/upload.js');
+
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+const router = express.Router();
+
+// --- Profile page ---
+router.get('/profile', requireLogin, async (req, res) => {
+  const username = req.session.user?.username || null;
+  const user= await prisma.user.findUnique({
+      where: { username },
+    });
+
+    const messages = req.session.messages || [];
+    req.session.messages = [];
+    await req.session.save();
+    return res.render('profile', { user, username, messages });
+  });
+
+
+// --- Avatar upload ---
+router.post('/profile', requireLogin, upload.single('avatar'), async (req, res) => {
+  const username = req.session.user?.username || null;
+  
+
+  if (!req.file) {
+    req.session.messages = [{ category: 'danger', message: 'No file selected or invalid file type.' }];
+    await req.session.save();
+    return res.redirect('/profile');
+  }
+
+  const filename = req.file.filename;
+  try {
+    await prisma.user.update({
+      where: { username },
+      data: { avatar: filename },
+    });
+    req.session.messages = [{ category: 'success', message: 'Avatar updated successfully!' }];
+    await req.session.save();
+    return res.redirect('/profile');
+  } catch (err) {
+    req.session.messages = [{ category: 'danger', message: 'Error updating avatar. Please try again.' }];
+    await req.session.save();
+    return res.redirect('/profile');
+  }
+  
+});
+
+module.exports = router;
+```
+We updated our profile route to use **Prisma** instead of the custom `User` model. again `prisma.user.findUnique()` retrieves the user’s data, and `prisma.user.update()` updates the avatar in the database.  
+
+**``routes/wiki.js``**
+```javascript
+const express = require('express');
+const { body, validationResult } = require('express-validator');
+const requireLogin = require('../middlewares/loginCheck.js');
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+const router = express.Router();
+
+router.get('/wiki/:pageName', async (req, res) => {
+    const pageName = req.params.pageName;
+    const username = req.session.user?.username || null;
+
+    const page =  await prisma.page.findUnique({
+      where: { title: pageName },
+      include: { author: true }, 
+    })
+    if (!page) {
+      req.session.messages = [{ category: 'danger', message: 'This page don\'t exist' }];
+      await req.session.save();
+      return res.redirect('/404');
+    }
+
+    // Add an htmlContent property (same as old code)
+    page.htmlContent = page.content;
+    return res.render('wiki_page', { page, pageName, username, messages: [] });
+  
+});
+
+// --- Create page form ---
+router.get('/create', requireLogin, async (req, res) => {
+  const messages = req.session.messages || [];
+  const username = req.session.user?.username || null;
+  const errors = req.session.errors || [];
+
+  req.session.messages = [];
+  req.session.errors = [];
+  await req.session.save();
+
+  return res.render('create_page', { username, errors, messages });
+});
+
+// --- Handle page creation ---
+router.post(
+  '/create',
+  requireLogin,
+  [
+    body('title').notEmpty().withMessage('Page title is required').trim(),
+    body('content').notEmpty().withMessage('Content is required')
+  ],
+  async (req, res) => {
+    const username = req.session.user?.username || null;
+    const errors = validationResult(req);
+
+    if (!errors.isEmpty()) {
+      req.session.errors = errors.errors;
+      await req.session.save();
+      return res.redirect('/create');
+    }
+
+    const { title, content } = req.body;
+    try{
+      const user = await prisma.user.findUnique({where: { username },});
+
+      await prisma.page.create({
+        data: {
+          title,
+          content,
+          author: user ? { connect: { id: user.id } } : undefined,
+        },
+      });
+      req.session.messages = [{ category: 'success', message: 'Page created successfully!' }];
+      await req.session.save();
+      return res.redirect(`/wiki/${title}`);
+    } catch(err){
+      console.error(err);
+      req.session.messages = [{ category: 'danger', message: 'Error creating page. It might already exist.' }];
+      await req.session.save();
+      return res.redirect('/create');
+    }
+    
+    
+  }
+);
+
+module.exports = router;
+
+```
+Finally for the `wiki.js` file. When a user visits a wiki page, `prisma.page.findUnique()` searches the database for a page with the given title and automatically includes the related author data thanks to the `include: { author: true }` option. This makes it easy to fetch both the page content and its creator in a single, clean query.
+
+When creating a new page, we use `prisma.user.findUnique()` to get the currently logged-in user and then call `prisma.page.create()` to insert the new page into the database. Prisma’s relational mapping lets us directly connect the new page to its author using `{ connect: { id: user.id } }`  no need to manually manage foreign keys or write SQL statements.
+#### Updating The app.js file
+Now we do finall update on the `app.js` file, we remove the use of the ``dbMiddleware``   
+**``app.js``**
+```javascript
+const express = require('express');
+const authRoutes = require('./routes/auth');
+const  profile = require('./routes/profile');
+const  wiki = require('./routes/wiki');
+const notFoundHandler = require('./middlewares/404');
+const Session = require('./middlewares/session');
+const app = express();
+const port = 3000;
+
+app.set('view engine', 'ejs');
+app.use(express.static('public'));
+app.use(express.urlencoded({ extended: true }));
+app.use(Session)
+
+app.use(authRoutes);
+app.use(profile);
+app.use(wiki);
+app.get('/', (req, res) => {
+  const username = req.session.user?.username || null;
+  const messages = req.session.messages || [];
+
+  res.render('index', { username, messages });
+
+  req.session.messages = [];
+});
+
+app.use(notFoundHandler);
+app.listen(port, () => {
+    console.log(`Server running at http://localhost:${port}`);
+});
+```
+
+### Using Controllers
+As your Express.js app grows, you’ll quickly notice that the **route files become cluttered** with many endpoints and all their logic written directly inside the same file. This makes it harder to debug, update, or extend functionality, especially when multiple routes share similar operations. To solve this, we introduce a controllers folder. Each controller file groups functions that handle specific endpoints for a given resource (e.g., users, wikis, or profiles). For example, `Profile.js` can contain `getProfile`and `updateProfile` functions, each responsible for one endpoint’s logic. Then, the route file simply maps HTTP requests to these controller functions. This separation of concerns keeps the project clean, modular, and easier to maintain when an issue arises, you’ll immediately know where to look: in the controller that handles that specific route.

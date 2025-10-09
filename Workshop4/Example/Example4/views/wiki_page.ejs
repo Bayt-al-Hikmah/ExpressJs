@@ -1,0 +1,8 @@
+<%- include('partials/_navbar') %>
+<h1><%= pageName %></h1>
+<p><em>By: <%= page.author.username %></em></p>
+<hr>
+<div>
+    <%- page.htmlContent %>
+</div>
+<%- include('partials/_footer') %>

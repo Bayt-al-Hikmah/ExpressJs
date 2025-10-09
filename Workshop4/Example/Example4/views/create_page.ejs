@@ -1,0 +1,28 @@
+<%- include('partials/_navbar') %>
+<h1 class="page-title">Create a Wiki Page (CKEditor)</h1>
+
+<form id="editorForm" method="POST" class="form-card">
+    <label for="title">Page Title</label>
+    <input id="title" name="title" type="text" required>
+    <% errors.forEach(error => { %>
+        <% if (error.path === 'title') { %>
+            <span style="color:red;"><%= error.msg %></span><br>
+        <% } %>
+    <% }) %>
+
+    <label for="content">Content</label>
+    <textarea id="content" name="content"></textarea>
+    <% errors.forEach(error => { %>
+        <% if (error.path === 'content') { %>
+            <span style="color:red;"><%= error.msg %></span><br>
+        <% } %>
+    <% }) %>
+
+    <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Create Page</button>
+    </div>
+</form>
+
+<%- include('partials/_ckeditor') %>
+
+<%- include('partials/_footer') %>

@@ -1,0 +1,99 @@
+const express = require('express');
+const argon = require('argon2');
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+
+const { body, validationResult } = require('express-validator');
+const router = express.Router();
+
+router.get('/register', async (req, res) => {
+    const messages = req.session.messages || [];
+    const username = req.session.user?.username || null
+    const errors = req.session.errors || []
+    req.session.messages = [];
+    req.session.errors = [];
+    await req.session.save();
+    res.render('register', { errors, messages  ,username });
+});
+
+router.post('/register', [
+    body('username').notEmpty().withMessage('Username is required').trim().isLength({ min: 3, max: 25 }),
+    body('password').notEmpty().withMessage('Password is required').isLength({ min: 6 })
+], async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        req.session.errors = errors.errors;
+        await req.session.save();
+        return res.redirect('/register');
+    }
+
+    const { username, password } = req.body;
+    const existingUser = await prisma.user.findUnique({
+      where: { username },
+    });
+    if (existingUser) {
+      req.session.messages = [{ category: 'danger', message: 'Username already exists!' }]
+      await req.session.save();
+      return res.redirect('/register')
+    }
+
+    try {
+      const password_hash = await argon.hash(password)
+      await prisma.user.create({
+      data: { username, password_hash },
+    });
+      req.session.messages = [{ category: 'success', message: 'Registration successful! Please log in.' }];
+      await req.session.save();
+      return res.redirect('/login');
+    } catch (err) {
+      req.session.messages = [{ category: 'danger', message: 'Error creating user. Please try again.' }]
+      await req.session.save();
+      return res.redirect('/register')
+    }      
+});
+
+router.get('/login', async (req, res) => {
+    const messages = req.session.messages || [];
+    const username = req.session.user?.username || null
+    const errors = req.session.errors || []
+    req.session.messages = [];
+    await req.session.save();
+    return res.render('login', { errors, messages ,username,errors});
+});
+
+router.post('/login', [
+    body('username').notEmpty().withMessage('Username is required'),
+    body('password').notEmpty().withMessage('Password is required')
+], async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        
+        req.session.errors = errors.errors;
+        await req.session.save();
+        return res.redirect('/login');
+    }
+
+    const { username, password } = req.body;
+    const user = await prisma.user.findUnique({
+      where: { username },
+    });
+
+      if (user && await argon.verify(user.password_hash, password)) {
+        req.session.user = { username };
+        req.session.messages = [{ category: 'success', message: 'Login successful!' }];
+        await req.session.save();
+        return res.redirect('/');
+      } else {
+        req.session.messages = [{ category: 'danger', message: 'Invalid username or password.' }];
+        await req.session.save();
+        return res.redirect('/login');
+      }
+});
+
+
+router.get('/logout',  async  (req, res) => {
+    await req.session.destroy();
+    return res.redirect('/login');
+});
+
+module.exports = router;
