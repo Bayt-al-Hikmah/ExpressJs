@@ -1,229 +1,98 @@
-### Objectives
-- Implement secure password hashing with `bcrypt` and protect routes using middleware.
+## Objectives
+- Implement secure password hashing with `argon` and protect routes using middleware.
 - Introduce **SQLite** as a lightweight, file-based database for persistent data storage.
 - Interact with the database using raw SQL queries, a custom `User` class, and the **Sequelize** ORM.
-- Organize the project with a modular structure for scalability and maintainability.
-### Project Structure
-To build a maintainable Express.js application, we extend the modular structure from the previous lecture. This organization separates concerns, making it easier for teams to collaborate and for the codebase to scale. Here’s the structure:
-```
-my_express_project/
-├── node_modules/
-├── public/
-│   ├── style.css
-│   ├── avatars/
-│   └── ckeditor/
-├── views/
-│   ├── layout.ejs
-│   ├── login.ejs
-│   ├── register.ejs
-│   ├── profile.ejs
-│   ├── wiki_page.ejs
-│   ├── create_page.ejs
-│   └── create_page_ck.ejs
-├── routes/
-│   ├── auth.js
-│   ├── wiki.js
-│   └── profile.js
-├── models/
-│   ├── db.js
-│   ├── user.js
-│   └── page.js
-├── utils/
-│   └── auth.js
-├── database.db
-├── schema.sql
-├── package.json
-└── app.js
-```
-**Why this structure?** Separating routes, models, and utilities ensures that each file has a single responsibility. For example, `routes/auth.js` handles authentication logic, `models/user.js` manages database interactions, and `utils/auth.js` contains reusable middleware. This makes debugging easier, allows frontend developers to focus on `views/`, and lets database engineers work on `models/` without touching route logic. To set up, create these folders and files, install dependencies with `npm install express express-session ejs marked express-validator multer bcrypt sqlite3 sequelize`, and ensure the `public/avatars` and `public/ckeditor` directories exist.
 
-### Hashed Passwords and Authentication
-Authentication is the cornerstone of any multi-user application, allowing users to register, log in, and access protected resources securely. In the previous lecture, we used an in-memory object to store users, which was simple but not persistent. Now, we’ll store users in a SQLite database and secure their passwords with `bcrypt`, a robust library for hashing passwords. We’ll also use middleware to protect routes, ensuring only logged-in users can access sensitive pages like their profile.
-#### Why Hash Passwords?
-Storing passwords in plain text is a security disaster if someone accesses your database, they can steal credentials, especially since many users reuse passwords across sites. Hashing transforms a password into a fixed-length string using a one-way function, meaning even you, the developer, can’t reverse it. `bcrypt` adds a random “salt” to each hash, making it resistant to precomputed attacks (e.g., rainbow tables). When a user logs in, `bcrypt` hashes their input and compares it to the stored hash. If they match, access is granted.  
-**How to set it up:** Install `bcrypt` with `npm install bcrypt`. Use `bcrypt.hash(password, 10)` to hash a password with 10 rounds of salting (a good balance of security and performance). Use `bcrypt.compare(password, hash)` to verify login attempts. We’ll integrate this into our authentication routes, storing hashed passwords in SQLite. 
-**`utils/auth.js` (reused from previous lecture):**
+## Hashed Passwords and Authentication
+
+### Hashing Passwords
+
+Storing passwords in plain text is a significant security risk, as unauthorized access to our database could expose them. Instead, we’ll hash passwords using a one-way function, ensuring that even we, as developers, cannot reverse them. When a user logs in, we hash their input and compare it to the stored hash. If they match, the login is successful.
+
+We’ll use the argon2 library, which provides:
+
+- argon2.hash(password): Generates a secure hash for a password.
+- argon2.verify(hash, password): Verifies if a provided password matches the stored hash.
+
+### Install Dependencies 
+We begin by installing Express and the necessary packages.
+```bash
+npm install express ejs argon2 dotenv express-validator iron-session multer
 ```
-const requireLogin = (req, res, next) => {
-    if (!req.session.username) {
-        req.session.messages = [{ category: 'danger', message: 'You must log in to access this page.' }];
+### Preparing Environment Variables
+We create a ``.env`` file and store the environment variables inside it.  
+**`.env`**
+```bash
+SESSION_SECRET=oihgahahvaaiohaehahvaai594qqfqq61
+NODE_ENV=development
+```
+### Creating middlewares
+We start with creating the middleware that handle sessions.  
+**`middlewares/session.js`**  
+```javascript
+const { getIronSession } = require('iron-session');
+require('dotenv').config();
+module.exports = async (req, res,next) => {
+const session = await getIronSession(req, res, {
+    cookieName: 'session',
+    password: process.env.SESSION_SECRET || 'a-very-long-random-secret-key-change-this!',
+    cookieOptions: {
+      secure: process.env.NODE_ENV === 'production', // only over HTTPS in production
+      httpOnly: true,
+      sameSite: 'lax',
+      maxAge: 15 * 60,
+    },
+  })
+  req.session = session; 
+  next();
+};
+```
+This middleware initializes a secure session for each request using **Iron Session**. It loads the secret key from environment variables and sets cookie options such as security, HTTP-only access, and expiration time. The created session is then attached to `req.session`, making it available in the rest of the app, and the middleware passes control to the next handler.  
+After this we create the ``404.js`` middleware to handel non existing pages  
+**`middlewares/404.js`**
+```javascript
+module.exports = (req, res) => {
+const username = req.session.user?.username || null;
+  res.status(404).render('404', {
+    username:username,
+    messages:[{ category: 'danger', message: 'Page don\'t exist' }],
+    title: 'Page Not Found',
+    url: req.originalUrl
+  });
+};
+```
+This middleware runs when we try to access a non-existing page. We add it at the end of the middleware stack so it executes whenever a requested route doesn’t match any of the defined routes. It renders a 404 page with an error message, showing the username if the user is logged in.   
+Finally we create the LoginCheck.js middleware that checks if the user is logged in or not.  
+**`middlewares/loginCheck.js`:**
+```javascript 
+const requireLogin = async (req, res, next) => {
+    const username = req.session.user?.username || null;
+    if (!username) {
+        req.session.messages = [
+            { category: 'danger', message: 'You must be logged in to access this page.' }
+        ];
+        await req.session.save();
         return res.redirect('/login');
     }
     next();
 };
 
-module.exports = { requireLogin };
+module.exports = requireLogin;
 ```
-**Explanation:** The `requireLogin` middleware checks if `req.session.username` exists, indicating a logged-in user. If not, it redirects to the login page with a flash message. This middleware is applied to protected routes, keeping our code DRY.  
-**`routes/auth.js`:**
-```
-const express = require('express');
-const bcrypt = require('bcrypt');
-const { body, validationResult } = require('express-validator');
-const sqlite3 = require('sqlite3').verbose();
-const router = express.Router();
-
-const db = new sqlite3.Database('./database.db');
-
-router.get('/register', (req, res) => {
-    res.render('register', { errors: [], messages: req.session.messages || [] });
-    req.session.messages = [];
-});
-
-router.post('/register', [
-    body('username').notEmpty().withMessage('Username is required').trim().isLength({ min: 3, max: 25 }),
-    body('password').notEmpty().withMessage('Password is required').isLength({ min: 6 })
-], async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
-        return res.redirect('/register');
-    }
-
-    const { username, password } = req.body;
-
-    // Check if username exists
-    db.get('SELECT * FROM user WHERE username = ?', [username], async (err, user) => {
-        if (err) {
-            req.session.messages = [{ category: 'danger', message: 'Database error.' }];
-            return res.redirect('/register');
-        }
-        if (user) {
-            req.session.messages = [{ category: 'danger', message: 'Username already exists!' }];
-            return res.redirect('/register');
-        }
-
-        // Hash password and insert user
-        const passwordHash = await bcrypt.hash(password, 10);
-        db.run('INSERT INTO user (username, password_hash) VALUES (?, ?)', [username, passwordHash], (err) => {
-            if (err) {
-                req.session.messages = [{ category: 'danger', message: 'Registration failed.' }];
-                return res.redirect('/register');
-            }
-            req.session.messages = [{ category: 'success', message: 'Registration successful! Please log in.' }];
-            res.redirect('/login');
-        });
-    });
-});
-
-router.get('/login', (req, res) => {
-    res.render('login', { errors: [], messages: req.session.messages || [] });
-    req.session.messages = [];
-});
-
-router.post('/login', [
-    body('username').notEmpty().withMessage('Username is required'),
-    body('password').notEmpty().withMessage('Password is required')
-], (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
-        return res.redirect('/login');
-    }
-
-    const { username, password } = req.body;
-    db.get('SELECT * FROM user WHERE username = ?', [username], async (err, user) => {
-        if (err || !user) {
-            req.session.messages = [{ category: 'danger', message: 'Invalid username or password.' }];
-            return res.redirect('/login');
-        }
-
-        if (await bcrypt.compare(password, user.password_hash)) {
-            req.session.userId = user.id;
-            req.session.username = user.username;
-            req.session.messages = [{ category: 'success', message: 'Login successful!' }];
-            res.redirect('/profile');
-        } else {
-            req.session.messages = [{ category: 'danger', message: 'Invalid username or password.' }];
-            res.redirect('/login');
-        }
-    });
-});
-
-router.get('/logout', (req, res) => {
-    req.session.destroy(() => {
-        res.redirect('/login');
-    });
-});
-
-module.exports = router;
-```
-**How it works:** The `/register` route validates input with `express-validator`, checks for existing usernames in the SQLite database, hashes the password with `bcrypt`, and stores the user. The `/login` route verifies credentials by comparing the hashed password. The `/logout` route clears the session.   
-**How to use:** Users visit `/register` to create an account, `/login` to sign in, and `/logout` to sign out. The session stores `userId` and `username` for tracking logged-in users.  
-**`views/register.ejs` (unchanged from previous lecture):**
-```
-<%- include('layout') %>
-<h1 class="page-title">Create an account</h1>
-
-<form method="POST" class="form-card">
-    <label for="username">Username</label>
-    <input id="username" name="username" type="text" required>
-    <% errors.forEach(error => { %>
-        <% if (error.param === 'username') { %>
-            <span style="color:red;"><%= error.msg %></span><br>
-        <% } %>
-    <% }) %>
-
-    <label for="password">Password</label>
-    <input id="password" name="password" type="password" required>
-    <% errors.forEach(error => { %>
-        <% if (error.param === 'password') { %>
-            <span style="color:red;"><%= error.msg %></span><br>
-        <% } %>
-    <% }) %>
-
-    <div class="form-actions">
-        <button type="submit" class="btn btn-primary">Register</button>
-        <a href="/login" class="btn btn-link">Already have an account?</a>
-    </div>
-</form>
-```
-**`views/login.ejs` (unchanged from previous lecture):** 
-```
-<%- include('layout') %>
-<h1 class="page-title">Log in</h1>
-
-<form method="POST" class="form-card">
-    <label for="username">Username</label>
-    <input id="username" name="username" type="text" required>
-    <% errors.forEach(error => { %>
-        <% if (error.param === 'username') { %>
-            <span style="color:red;"><%= error.msg %></span><br>
-        <% } %>
-    <% }) %>
-
-    <label for="password">Password</label>
-    <input id="password" name="password" type="password" required>
-    <% errors.forEach(error => { %>
-        <% if (error.param === 'password') { %>
-            <span style="color:red;"><%= error.msg %></span><br>
-        <% } %>
-    <% }) %>
-
-    <div class="form-actions">
-        <button type="submit" class="btn btn-success">Login</button>
-        <a href="/register" class="btn btn-link">Create account</a>
-    </div>
-</form>
-```
-#### Protecting Routes with Middleware
-Repeating authentication checks in every route is inefficient and error-prone. The `requireLogin` middleware (from `utils/auth.js`) acts like a gatekeeper, ensuring only authenticated users access protected routes. This is similar to a Python decorator but implemented as Express middleware.  
-**`routes/profile.js`:**
-```
-const express = require('express');
+The `requireLogin` middleware checks if `req.session.user?.username` exists, indicating a logged-in user. If not, it redirects to the login page with a flash message. This middleware is applied to protected routes, keeping our code DRY.  
+Finally we set the upload middleware. 
+**``middlewares/upload.js``** 
+```javascript
 const multer = require('multer');
 const path = require('path');
-const sqlite3 = require('sqlite3').verbose();
-const { requireLogin } = require('../utils/auth');
-const router = express.Router();
 
-const db = new sqlite3.Database('./database.db');
-
+// Configure storage and file filtering
 const upload = multer({
-    dest: 'public/avatars/',
+    dest: 'public/avatars/', // You can make this dynamic if needed
     fileFilter: (req, file, cb) => {
         const allowedExtensions = ['.png', '.jpg', '.jpeg', '.gif'];
         const ext = path.extname(file.originalname).toLowerCase();
+
         if (allowedExtensions.includes(ext)) {
             cb(null, true);
         } else {
@@ -232,597 +101,957 @@ const upload = multer({
     }
 });
 
-router.get('/', requireLogin, (req, res) => {
-    db.get('SELECT id, username, avatar FROM user WHERE id = ?', [req.session.userId], (err, user) => {
-        if (err || !user) {
-            req.session.messages = [{ category: 'danger', message: 'User not found.' }];
-            return res.redirect('/login');
-        }
-        res.render('profile', { user, username: req.session.username, messages: req.session.messages || [] });
-        req.session.messages = [];
-    });
+module.exports = upload;
+```
+### Creating the routes
+We’ve finished creating our middlewares. Now, we’ll set up the routes, All the routes from previous lecture stay same we need only make changes on auth route, to make it use argon2 and save hashed password instead of plain text.    
+**`routes/auth.js`:**
+```javascript
+const express = require('express');
+const argon = require('argon2');
+const { body, validationResult } = require('express-validator');
+const router = express.Router();
+
+router.get('/register', async (req, res) => {
+    const messages = req.session.messages || [];
+    const username = req.session.user?.username || null
+    const errors = req.session.errors || []
+    req.session.messages = [];
+    req.session.errors = [];
+    await req.session.save();
+    return res.render('register', { errors, messages  ,username });
 });
 
-router.post('/', requireLogin, upload.single('avatar'), (req, res) => {
-    if (!req.file) {
-        req.session.messages = [{ category: 'danger', message: 'No file selected or invalid file type.' }];
-        return res.redirect('/profile');
+router.post('/register', [
+    body('username').notEmpty().withMessage('Username is required').trim().isLength({ min: 3, max: 25 }),
+    body('password').notEmpty().withMessage('Password is required').isLength({ min: 6 })
+], async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        req.session.errors = errors.errors;
+        await req.session.save();
+        return res.redirect('/register');
     }
-    const filename = req.file.filename;
-    db.run('UPDATE user SET avatar = ? WHERE id = ?', [filename, req.session.userId], (err) => {
-        if (err) {
-            req.session.messages = [{ category: 'danger', message: 'Failed to update avatar.' }];
-            return res.redirect('/profile');
-        }
-        req.session.messages = [{ category: 'success', message: 'Avatar updated!' }];
-        res.redirect('/profile');
-    });
+
+    const { username, password } = req.body;
+    if (req.app.locals.users[username]) {
+        req.session.messages = [{ category: 'danger', message: 'Username already exists!' }];
+        await req.session.save();
+        return res.redirect('/register');
+    }
+    hashed_password = await argon.hash(password)
+    req.app.locals.users[username] = { hashed_password, avatar: null };
+    req.session.messages = [{ category: 'success', message: 'Registration successful! Please log in.' }];
+    await req.session.save();
+    return res.redirect('/login');
+});
+
+router.get('/login', async (req, res) => {
+    const messages = req.session.messages || [];
+    const username = req.session.user?.username || null
+    const errors = req.session.errors || []
+    req.session.messages = [];
+    await req.session.save();
+    return res.render('login', { errors, messages ,username,errors});
+});
+
+router.post('/login', [
+    body('username').notEmpty().withMessage('Username is required'),
+    body('password').notEmpty().withMessage('Password is required')
+], async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        
+        req.session.errors = errors.errors;
+        await req.session.save();
+        return res.redirect('/login');
+    }
+
+    const { username, password } = req.body;
+    const user = req.app.locals.users[username];
+    if (user && await argon.verify(user.hashed_password ,password)) {
+        req.session.user = { username };
+        req.session.messages = [{ category: 'success', message: 'Login successful!' }];
+        await req.session.save();
+        return res.redirect('/');
+    } else {
+        req.session.messages = [{ category: 'danger', message: 'Invalid username or password.' }];
+        await req.session.save();
+        return res.redirect('/login');
+    }
+});
+
+router.get('/logout',  async  (req, res) => {
+    await req.session.destroy();
+    return res.redirect('/login');
 });
 
 module.exports = router;
 ```
-**`views/profile.ejs`:**
-```
-<%- include('layout') %>
-<div class="container">
-    <h1>Welcome, <%= user.username %></h1>
+**GET /register**
 
-    <div class="avatar-section">
-        <% if (user.avatar) { %>
-            <img src="/avatars/<%= user.avatar %>" alt="User Avatar" class="avatar">
-        <% } else { %>
-            <p>No avatar uploaded yet.</p>
-        <% } %>
-    </div>
+When the user visits `/register`:
 
-    <form action="/profile" method="POST" enctype="multipart/form-data">
-        <label for="avatar">Upload new avatar:</label>
-        <input type="file" id="avatar" name="avatar" accept="image/*" required>
-        <button type="submit" class="btn btn-primary">Upload</button>
-    </form>
-</div>
-```
-**Explanation:** The `/profile` route uses `requireLogin` to ensure only authenticated users can view or update their profile. The `multer` middleware handles avatar uploads, restricting file types to images. **How to use:** After logging in, users visit `/profile` to view their profile or upload an avatar. The database stores the avatar filename, and the image is served from `public/avatars`.
-### Working with SQLite
-In-memory storage (used in the previous lecture) loses data on server restart. SQLite provides a lightweight, file-based database that persists data without requiring a separate server, making it ideal for learning and small projects.
-#### Why SQLite?
-- **Serverless**: No need for a database server like MySQL.
-- **File-Based**: Stores all data in a single `database.db` file.
-- **Simple Setup**: Works out of the box with Node.js via `sqlite3`.
+- The server renders the **register** page (EJS, Handlebars, etc.) with any stored messages from the session (like errors or success notifications).
+    
+- After rendering, it clears the session messages to avoid showing old alerts again.
+    
 
-**How to set it up:** Install `sqlite3` with `npm install sqlite3`. Create a `database.db` file by defining a schema and running it with SQLite.  
-**`schema.sql`:**  
-```
-DROP TABLE IF EXISTS user;
-DROP TABLE IF EXISTS page;
+**POST /register**
 
-CREATE TABLE user (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    avatar TEXT
-);
+When the registration form is submitted:
 
-CREATE TABLE page (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT UNIQUE NOT NULL,
-    content TEXT NOT NULL,
-    author_id INTEGER NOT NULL,
-    is_markdown BOOLEAN NOT NULL DEFAULT 1,
-    FOREIGN KEY (author_id) REFERENCES user(id)
-);
-```
-**How to initialize:** Run `sqlite3 database.db < schema.sql` in the terminal to create the database and tables. The `user` table stores user data, and the `page` table stores wiki pages with a foreign key linking to the author’s `id`.
-#### Connecting Express with SQLite
-The `sqlite3` package lets us connect to SQLite and execute queries. We use parameterized queries (`?`) to prevent SQL injection, a security risk where malicious input could manipulate database queries.  
-**`app.js`:**
-```
+- The server validates the input fields:
+    
+    - `username` must not be empty and must be between 3 and 25 characters.
+        
+    - `password` must not be empty and must be at least 6 characters long.
+        
+- If validation fails, the user is redirected back to `/register` with error messages.    
+- If validation passes:
+    - The server checks if the username already exists in memory (`req.app.locals.users`).
+    - If it exists: a danger message (“Username already exists!”) is stored, and the user is redirected to `/register`.
+    - If it’s a new username:
+        - The password is securely hashed using **Argon2** with `await argon.hash(password)`.
+        - The new user is stored in memory: `req.app.locals.users[username] = { password_hash };`
+        - A success message (“Registration successful! Please log in.”) is saved to the session.
+        - The user is redirected to `/login`.
+
+**GET /login**
+
+When the user visits `/login`:
+
+- The server renders the **login** page with any flash messages stored in the session (like “Registration successful” or “Invalid credentials”).
+    
+- It then clears these messages to prevent duplicates.
+    
+
+ **POST /login**
+
+When the login form is submitted:
+
+- The server validates that both `username` and `password` fields are filled.
+- If validation fails, it redirects back to `/login` with error messages.
+- If validation passes:
+    - It looks up the user in memory (`req.app.locals.users[username]`).
+    - **Argon2** is used to verify the password:`await argon.verify(user.password_hash, password)`
+    - If the credentials are valid:
+        - The user’s information is saved to the session (`req.session.username = user.username`).
+        - A success message (“Login successful!”) is shown.
+        - The user is redirected to `/`.
+    - If invalid:
+        - An error message (“Invalid username or password.”) is stored.
+        - The user is redirected back to `/login`.
+            
+			 
+**GET /logout**
+
+When visiting `/logout`:
+
+- The session is destroyed using `req.session.destroy()`, logging the user out.
+    
+- After logout, the user is redirected to `/login`. 
+### Templates and Style
+We use the same template that we built on our previous lecture same to layout and the partials and the styles.  
+Finally we set the ``app.js``
+**`app.js`**
+```javascript
 const express = require('express');
-const session = require('express-session');
 const authRoutes = require('./routes/auth');
-const wikiRoutes = require('./routes/wiki');
-const profileRoutes = require('./routes/profile');
+const  profile = require('./routes/profile');
+const  wiki = require('./routes/wiki');
+const notFoundHandler = require('./middlewares/404');
+const Session = require('./middlewares/session');
 const app = express();
 const port = 3000;
 
+app.locals.users = {}; // e.g., { 'username': { password: 'password123', avatar: null } }
+app.locals.pages = {}; // e.g., { 'HomePage': { content: 'Welcome!', author: 'admin' } }
+
 app.set('view engine', 'ejs');
 app.use(express.static('public'));
-app.use(session({
-    secret: 'your-super-secret-key-that-no-one-knows',
-    resave: false,
-    saveUninitialized: false
-}));
 app.use(express.urlencoded({ extended: true }));
+app.use(Session)
+
 
 app.use(authRoutes);
-app.use(wikiRoutes);
-app.use(profileRoutes);
-
+app.use(profile);
+app.use(wiki);
 app.get('/', (req, res) => {
-    res.render('index', { username: req.session.username, messages: req.session.messages || [] });
-    req.session.messages = [];
+  const username = req.session.user?.username || null;
+  const messages = req.session.messages || [];
+
+  return res.render('index', { username, messages });
+
+  req.session.messages = [];
 });
+
+app.use(notFoundHandler);
+
 
 app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
 });
 ```
-**Explanation:** The `app.js` file sets up the Express app, configures middleware (`express-session`, `express.urlencoded`, `express.static`), and mounts routers. The SQLite connection is handled in individual route files for raw SQL, ensuring modularity. **How to use:** Start the app with `node app.js`, and it will connect to `database.db` for persistent storage.
-#### Refactoring with a User Class
-Mixing raw SQL in routes creates repetitive code and couples business logic with database operations. A `User` class encapsulates database interactions, making routes cleaner and more maintainable.  
-**`models/user.js`:**
+With this setup, we’ve made our app more secure and organized. User passwords are now stored as hashed values instead of plain text, preventing sensitive data leaks.
+
+## Working with SQLite
+Storing users in memory (just in the server’s RAM) is convenient for quick prototyping, but it has a major limitation: all data is lost whenever the server restarts because RAM is volatile. For any real-world application, we need persistent storage a way to save data that survives server restarts. This is where a database comes in. A database provides a structured and reliable way to store, manage, and retrieve data, ensuring that users’ information is safe and always accessible.
+
+We’ll use **SQLite**, a lightweight, file-based database ideal for learning and small to medium-sized applications. SQLite’s advantages include:
+
+- **Serverless**: No separate server process is required.
+- **File-Based**: Data is stored in a single file (e.g., database.db).
+- **Built-in**: Available in Node.js via the sqlite3 package, requiring no additional setup.
+
+### Creating the Database
+
+
+We define a schema for our SQLite database to store user information. The schema includes a user table with fields for id, username, and password_hash.
+
+**`schema.sql`:**
+
+```sql
+CREATE TABLE users (
+
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    username TEXT UNIQUE NOT NULL,
+
+    password_hash TEXT NOT NULL,
+
+    avatar TEXT
+
+);
+
+CREATE TABLE pages (
+
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    title TEXT UNIQUE NOT NULL,
+
+    content TEXT NOT NULL
+
+);
 ```
+
+**Initialize the Database**  
+We run the schema to create the database file:
+
+First we connect and create the database file
+
+```shell
+sqlite3 database.db 
+```
+
+Now we will be inside the `sqlite` terminal , we run the following command to create our table
+
+```shell
+.read schema.sql
+```
+
+Then we quit the sqlite terminal using
+
+```shell
+.quit
+```
+
+This creates database.db with the user table, ready for use.
+### Connecting Express with SQLite
+The `sqlite3` package lets us connect to SQLite and execute queries. We use parameterized queries (`?`) to prevent SQL injection, a security risk where malicious input could manipulate database queries.  
+
+**Install SQLite3**
+```shell
+npm install sqlite3
+```
+Now we create the middlwares to contact with the database
+**`middlewares/dbMiddleware.js`**
+```javascript
 const sqlite3 = require('sqlite3').verbose();
-const bcrypt = require('bcrypt');
 
+module.exports = function () {
+  return (req, res, next) => {
+    if (!req.app.get('db')) {
+      const db = new sqlite3.Database('database.db', (err) => {
+        if (err) {
+          console.error('Failed to connect to SQLite:', err);
+          return next(err);
+        }
+        console.log('Connected to SQLite database');
+      });
+
+      req.app.set('db', db);
+
+      const closeDb = () => {
+        const db = req.app.get('db');
+        if (db) {
+          db.close((err) => {
+            if (err) {
+              console.error('Failed to close SQLite:', err);
+            } else {
+              console.log('SQLite database connection closed');
+            }
+            process.exit(0);
+          });
+        } else {
+          process.exit(0);
+        }
+      };
+
+      // Handle process termination signals
+      process.on('SIGINT', closeDb);
+      process.on('SIGTERM', closeDb);
+    }
+    next();
+  };
+};
+```
+We first imports the sqlite3 library and enables verbose mode for better debugging messages. Then, we exports a function that returns our middleware. This allows us to easily plug it into our Express app using app.use(require('./dbMiddleware')()).
+
+Inside the middleware, we first checks if the app already has a database connection stored (`req.app.get('db')`). If it doesn’t, we creates a new SQLite connection to the file **`database.db`**.  
+If there’s an error connecting, we logs it and calls `next(err)` to pass the error to Express for handling. Otherwise, we prints “Connected to SQLite database”.
+
+Once the connection is ready, we save it inside the Express app with `req.app.set('db', db)`. This means all routes can later access it via `req.app.get('db')` so the same database connection is reused across the app instead of creating a new one every time.
+
+Next, we defines a helper function called **`closeDb`**. This function safely closes the database connection when the application is stopped. It logs whether the close was successful or not, then exits the process.
+
+Finally, we set our middlware to listens for two system signals `SIGINT` (like when we press Ctrl+C) and `SIGTERM` (sent by some hosting environments to shut down apps). When either happens, it calls `closeDb()` to ensure the SQLite connection closes properly before the app exits.
+
+At the end, the middleware calls `next()` so Express continues to the next handler or route.
+
+#### Editing the routes
+Now we’ll update our routes to use the database for storing and retrieving data instead of relying on local storage.
+**`routes/auth.js`**
+```javascript
+const express = require('express');
+const argon = require('argon2');
+const { body, validationResult } = require('express-validator');
+const router = express.Router();
+
+router.get('/register', async (req, res) => {
+    const messages = req.session.messages || [];
+    const username = req.session.user?.username || null
+    const errors = req.session.errors || []
+    req.session.messages = [];
+    req.session.errors = [];
+    await req.session.save();
+    return res.render('register', { errors, messages  ,username });
+});
+
+router.post('/register', [
+    body('username').notEmpty().withMessage('Username is required').trim().isLength({ min: 3, max: 25 }),
+    body('password').notEmpty().withMessage('Password is required').isLength({ min: 6 })
+], async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        req.session.errors = errors.errors;
+        await req.session.save();
+        return res.redirect('/register');
+    }
+
+    const { username, password } = req.body;
+    const db = req.app.get('db');
+    const existingUser = await new Promise((resolve, reject) => {
+      db.get('SELECT * FROM users WHERE username = ?', [username], (err, row) => {
+        if (err) reject(err)
+        resolve(row)
+      })
+    })
+
+    if (existingUser) {
+      req.session.messages = [{ category: 'danger', message: 'Username already exists!' }]
+      await req.session.save();
+      return res.redirect('/register')
+    }
+
+    hashed_password = await argon.hash(password)
+    await new Promise((resolve, reject) => {
+      db.run('INSERT INTO users (username, password_hash) VALUES (?, ?)', [username, hashed_password],async (err) => {
+        if (err){
+            req.session.messages = [{ category: 'danger', message: 'Database error.' }];
+            await req.session.save();
+            return res.redirect('/register')
+        } 
+        resolve()
+      })
+    })
+   
+    req.session.messages = [{ category: 'success', message: 'Registration successful! Please log in.' }];
+          
+    await req.session.save();
+    return res.redirect('/login');
+        
+});
+
+router.get('/login', async (req, res) => {
+    const messages = req.session.messages || [];
+    const username = req.session.user?.username || null
+    const errors = req.session.errors || []
+    req.session.messages = [];
+    await req.session.save();
+    return res.render('login', { errors, messages ,username,errors});
+});
+
+router.post('/login', [
+    body('username').notEmpty().withMessage('Username is required'),
+    body('password').notEmpty().withMessage('Password is required')
+], async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        
+        req.session.errors = errors.errors;
+        await req.session.save();
+        return res.redirect('/login');
+    }
+
+    const { username, password } = req.body;
+    const db = req.app.get('db');
+
+    const user = await new Promise((resolve, reject) => {
+    db.get('SELECT * FROM users WHERE username = ?', [username], (err, row) => {
+        if (err) reject(err)
+        resolve(row)
+      })
+    })
+
+      if (user && await argon.verify(user.password_hash, password)) {
+        req.session.user = { username };
+        req.session.messages = [{ category: 'success', message: 'Login successful!' }];
+        await req.session.save();
+        return res.redirect('/');
+      } else {
+        req.session.messages = [{ category: 'danger', message: 'Invalid username or password.' }];
+        await req.session.save();
+        return res.redirect('/login');
+      }
+});
+
+
+router.get('/logout',  async  (req, res) => {
+    await req.session.destroy();
+    return res.redirect('/login');
+});
+
+module.exports = router;
+```
+In this code, we use a real database instead of local storage to store and retrieve user data. When we register a user, we insert their information into the database using the ``db.run()`` method, and when we need to check if a username already exists or verify login credentials, we use ``db.get()`` to retrieve a single record.We use question marks (`?`) as placeholders for example, ``db.get('SELECT * FROM users WHERE username = ?', [username], ...)``. These placeholders make our queries safe from SQL injection. Instead of directly inserting user input into the SQL string, the database automatically replaces the ``?`` with the actual values from the array (like [username, hashed_password]) in a secure way. This ensures that any special characters or malicious input from users are treated as data, not as SQL commands. For example, if someone tried to enter a harmful input like ``john'); DROP TABLE users; --``, it would not break our query or damage the database because the database engine escapes it properly.
+
+We also use Promises to make our database operations cleaner and easier to manage. Normally, database functions like ``db.get()`` and ``db.run()`` use callbacks, which can quickly make the code messy and hard to follow. To improve readability, we wrap these calls inside Promises and then use await to pause the execution until the database responds. If the operation succeeds, the Promise resolves with the result (like the retrieved row), and if there’s an error, it rejects and throws an exception. This allows us to write database logic in a more straightforward, synchronous-looking style using async/await.  
+**`routes/profile.js`**
+```javascript
+const express = require('express');
+const requireLogin = require('../middlewares/loginCheck.js');
+const upload = require('../middlewares/upload.js');
+
+const router = express.Router();
+
+// --- Profile page ---
+router.get('/profile', requireLogin, async (req, res) => {
+  const username = req.session.user?.username || null;
+  const db = req.app.get('db');
+  const user = await new Promise((resolve, reject) => {
+      db.get('SELECT * FROM users WHERE username = ?', [username], (err, row) => {
+        if (err) reject(err)
+        resolve(row)
+      })
+    })
+  
+
+    const messages = req.session.messages || [];
+    req.session.messages = [];
+    await req.session.save();
+    return res.render('profile', { user, username, messages });
+  });
+
+
+// --- Avatar upload ---
+router.post('/profile', requireLogin, upload.single('avatar'), async (req, res) => {
+  const username = req.session.user?.username || null;
+  const db = req.app.get('db');
+
+  if (!req.file) {
+    req.session.messages = [{ category: 'danger', message: 'No file selected or invalid file type.' }];
+    await req.session.save();
+    return res.redirect('/profile');
+  }
+
+  const filename = req.file.filename;
+  await new Promise((resolve, reject) => {
+      db.run('UPDATE users SET avatar = ? WHERE username = ?', [filename, username],async (err) => {
+        if (err){
+            req.session.messages = [{ category: 'danger', message: 'Database error while updating avatar.' }];
+            await req.session.save();
+            return res.redirect('/profile')
+        } 
+        resolve()
+      })
+    })
+    req.session.messages = [{ category: 'success', message: 'Avatar updated successfully!' }];
+    await req.session.save();
+    return res.redirect('/profile');
+  
+});
+
+module.exports = router;
+
+```
+Same as before, we use the database instead of ``local objects`` to store and retrieve user profile data. In the GET ``/profile`` route, we get the logged-in username from the session and use ``db.get('SELECT * FROM users WHERE username = ?', [username])`` to fetch the user’s information. The ``?`` acts as a placeholder that securely inserts values into the SQL query, protecting against SQL injection by treating input as data rather than executable code.
+
+In the POST ``/profile`` route, after uploading an avatar, we update the user’s record with ``db.run('UPDATE users SET avatar = ? WHERE username = ?', [filename, username])``. Both ``db.get()`` and ``db.run()`` are wrapped in Promises so we can use async/await, making the code easier to read and manage. This approach ensures that user data is safely stored and retrieved from the database instead of being kept temporarily in memory.  
+**`routes/wiki.js`**
+```javascript
+const express = require('express');
+const { body, validationResult } = require('express-validator');
+const requireLogin = require('../middlewares/loginCheck.js');
+
+const router = express.Router();
+
+// Ensure the wiki table exists
+
+
+// --- View a wiki page ---
+router.get('/wiki/:pageName', async (req, res) => {
+    const db = req.app.get('db');
+    const pageName = req.params.pageName;
+    const username = req.session.user?.username || null;
+
+    const page = await new Promise((resolve, reject) => {
+      db.get('SELECT * FROM pages WHERE title = ?', [pageName], (err, row) => {
+        if (err){
+            reject(err)
+            return res.redirect('/404');
+            
+        } 
+        resolve(row)
+      })
+    })
+ 
+    if (!page) {
+      req.session.messages = [{ category: 'danger', message: 'This page don\'t exist' }];
+      await req.session.save();
+      return res.redirect('/404');
+    }
+
+    // Add an htmlContent property (same as old code)
+    page.htmlContent = page.content;
+    return res.render('wiki_page', { page, pageName, username, messages: [] });
+  
+});
+
+// --- Create page form ---
+router.get('/create', requireLogin, async (req, res) => {
+  const messages = req.session.messages || [];
+  const username = req.session.user?.username || null;
+  const errors = req.session.errors || [];
+
+  req.session.messages = [];
+  req.session.errors = [];
+  await req.session.save();
+
+  return res.render('create_page', { username, errors, messages });
+});
+
+// --- Handle page creation ---
+router.post(
+  '/create',
+  requireLogin,
+  [
+    body('title').notEmpty().withMessage('Page title is required').trim(),
+    body('content').notEmpty().withMessage('Content is required')
+  ],
+  async (req, res) => {
+    const db = req.app.get('db');
+    const username = req.session.user?.username || null;
+    const errors = validationResult(req);
+
+    if (!errors.isEmpty()) {
+      req.session.errors = errors.errors;
+      await req.session.save();
+      return res.redirect('/create');
+    }
+
+    const { title, content } = req.body;
+    await new Promise((resolve, reject) => {
+      db.run('INSERT INTO pages (title, content) VALUES (?, ?)', [title, content],async (err) => {
+        if (err){
+            if (err.message.includes('UNIQUE constraint failed')) {
+            req.session.messages = [{ category: 'danger', message: 'A page with that title already exists!' }];
+            } else {
+            
+            req.session.messages = [{ category: 'danger', message: 'Failed to create page.' }];
+            }
+          await req.session.save();
+          return res.redirect('/create');
+        } 
+        resolve()
+      })
+    })
+    req.session.messages = [{ category: 'success', message: 'Page created successfully!' }];
+    await req.session.save();
+    return res.redirect(`/wiki/${title}`);
+    
+  }
+);
+
+module.exports = router;
+```
+Finally for ``wiki.js`` file, we use the database to store and retrieve wiki pages. In the GET ``/wiki/:pageName`` route, we use ``db.get('SELECT * FROM pages WHERE title = ?', [pageName])`` to fetch the requested page from the database. The ``?`` acts as a placeholder for the page title, which keeps the query safe from SQL injection by ensuring that user input is handled as plain data, not executable SQL code.
+
+When creating a new page in the POST ``/create route``, we use ``db.run('INSERT INTO pages (title, content) VALUES (?, ?)', [title, content])`` to insert the data into the database.  
+Finally we update the `app.js` File to use the database.  
+**`app.js`**
+```javascript
+const express = require('express');
+const authRoutes = require('./routes/auth');
+const  profile = require('./routes/profile');
+const  wiki = require('./routes/wiki');
+const notFoundHandler = require('./middlewares/404');
+const Session = require('./middlewares/session');
+const dbMiddleware = require('./middlewares/dbMiddleware.js');
+const app = express();
+const port = 3000;
+
+
+app.set('view engine', 'ejs');
+app.use(express.static('public'));
+app.use(express.urlencoded({ extended: true }));
+app.use(Session)
+app.use(dbMiddleware())
+
+app.use(authRoutes);
+app.use(profile);
+app.use(wiki);
+app.get('/', (req, res) => {
+  const username = req.session.user?.username || null;
+  const messages = req.session.messages || [];
+  req.session.messages = [];
+  return res.render('index', { username, messages });
+
+  
+});
+
+app.use(notFoundHandler);
+
+
+app.listen(port, () => {
+    console.log(`Server running at http://localhost:${port}`);
+});
+```
+### Refactoring with a User Class
+
+Our SQLite-based app works well, but the current routes contain raw SQL queries, mixing database logic with request handling. This approach breaks the **DRY (Don’t Repeat Yourself)** principle and makes maintenance harder since we repeat queries like `SELECT * FROM users WHERE username = ?` in multiple places. It also couples the route logic too closely with the database structure, reducing flexibility and scalability.
+
+To improve this, we’ll introduce `User` and `Page` classes that encapsulate all database operations. These classes will provide clean, reusable methods for actions such as creating a user, finding one by username, or managing wiki pages. By separating data access from route logic, our code becomes more organized, maintainable, and easier to extend in the future.  
+#### Creating the model class
+We first start with creating the User class  
+**``models/User.js``**
+```javascript
+const argon2 = require('argon2')
 class User {
-    static db = new sqlite3.Database('./database.db');
+  static async create(db, username, password) {
+    const passwordHash = await argon2.hash(password)
+    return new Promise((resolve, reject) => {
+      db.run('INSERT INTO users (username, password_hash) VALUES (?, ?)', [username, passwordHash], function (err) {
+        if (err) reject(err)
+        resolve()
+      })
+    })
+  }
 
-    static async create(username, password) {
-        const passwordHash = await bcrypt.hash(password, 10);
-        return new Promise((resolve, reject) => {
-            this.db.run(
-                'INSERT INTO user (username, password_hash) VALUES (?, ?)',
-                [username, passwordHash],
-                function (err) {
-                    if (err) return reject(err);
-                    resolve(this.lastID);
-                }
-            );
-        });
-    }
-
-    static findByUsername(username) {
-        return new Promise((resolve, reject) => {
-            this.db.get(
-                'SELECT * FROM user WHERE username = ?',
-                [username],
-                (err, user) => {
-                    if (err) return reject(err);
-                    resolve(user);
-                }
-            );
-        });
-    }
+  static async findByUsername(db, username) {
+    return new Promise((resolve, reject) => {
+      db.get('SELECT * FROM users WHERE username = ?', [username], (err, row) => {
+        if (err) reject(err)
+        resolve(row)
+      })
+    })
+  }
+  static async updateAvatar(db, username, avatarFilename) {
+    return new Promise((resolve, reject) => {
+      db.run(
+        'UPDATE users SET avatar = ? WHERE username = ?',
+        [avatarFilename, username],
+        function (err) {
+          if (err) reject(err)
+          resolve()
+        }
+      )
+    })
+  }
 }
 
-module.exports = User;
+module.exports = User
 ```
-**`routes/auth.js` (refactored):**
-```
-const express = require('express');
-const bcrypt = require('bcrypt');
-const { body, validationResult } = require('express-validator');
-const User = require('../models/user');
-const router = express.Router();
+We create a `User` class to serve as a model that represents users in our application. This class provides dedicated methods for common user operations, keeping our code organized and consistent.
 
-router.get('/register', (req, res) => {
-    res.render('register', { errors: [], messages: req.session.messages || [] });
-    req.session.messages = [];
-});
+The `User.create(db, username, password)` method hashes the password using **Argon2**, a secure password-hashing algorithm, and then inserts the new user into the database with `db.run()`. This ensures that we never store plain-text passwords, enhancing security.
 
-router.post('/register', [
-    body('username').notEmpty().withMessage('Username is required').trim().isLength({ min: 3, max: 25 }),
-    body('password').notEmpty().withMessage('Password is required').isLength({ min: 6 })
-], async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
-        return res.redirect('/register');
-    }
+The `User.findByUsername(db, username)` method retrieves a user’s record from the database based on their username using `db.get()`. It returns the corresponding row if the user exists.  
+The `User.updateAvatar(db, username, avatarFilename)` method updates the user’s avatar in the database using `db.run()`. It replaces the existing value in the `avatar` column with the new file name for the user identified by their username.  
 
-    const { username, password } = req.body;
-    const existingUser = await User.findByUsername(username);
-    if (existingUser) {
-        req.session.messages = [{ category: 'danger', message: 'Username already exists!' }];
-        return res.redirect('/register');
-    }
-
-    await User.create(username, password);
-    req.session.messages = [{ category: 'success', message: 'Registration successful! Please log in.' }];
-    res.redirect('/login');
-});
-
-router.get('/login', (req, res) => {
-    res.render('login', { errors: [], messages: req.session.messages || [] });
-    req.session.messages = [];
-});
-
-router.post('/login', [
-    body('username').notEmpty().withMessage('Username is required'),
-    body('password').notEmpty().withMessage('Password is required')
-], async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
-        return res.redirect('/login');
-    }
-
-    const { username, password } = req.body;
-    const user = await User.findByUsername(username);
-    if (!user || !(await bcrypt.compare(password, user.password_hash))) {
-        req.session.messages = [{ category: 'danger', message: 'Invalid username or password.' }];
-        return res.redirect('/login');
-    }
-
-    req.session.userId = user.id;
-    req.session.username = user.username;
-    req.session.messages = [{ category: 'success', message: 'Login successful!' }];
-    res.redirect('/profile');
-});
-
-router.get('/logout', (req, res) => {
-    req.session.destroy(() => {
-        res.redirect('/login');
-    });
-});
-
-module.exports = router;
-```
-**Explanation:** The `User` class encapsulates database operations like creating a user or finding one by username. Routes call these methods instead of raw SQL, reducing duplication and separating concerns. **How to use:** The `User.create` method hashes the password and inserts a new user, while `User.findByUsername` retrieves user data for login checks. This makes it easy to add new user-related features without rewriting SQL.
-#### Using Sequelize and Models
-Raw SQL, even with a `User` class, ties our code to SQLite-specific syntax. Switching to another database (e.g., PostgreSQL) would require rewriting queries. **Sequelize**, an ORM, abstracts database operations into JavaScript objects, making our code database-agnostic and easier to maintain.  
-**Why Sequelize?** It lets us define tables as models (e.g., `User`, `Page`), interact with rows as objects, and handles SQL generation. This separates business logic from database logic.  
-**`models/user.js` (Sequelize version):**
-```
-const { Sequelize, DataTypes } = require('sequelize');
-const bcrypt = require('bcrypt');
-
-const sequelize = new Sequelize('sqlite:./database.db', { logging: false });
-
-const User = sequelize.define('User', {
-    id: {
-        type: DataTypes.INTEGER,
-        primaryKey: true,
-        autoIncrement: true
-    },
-    username: {
-        type: DataTypes.STRING(150),
-        unique: true,
-        allowNull: false
-    },
-    password_hash: {
-        type: DataTypes.STRING(200),
-        allowNull: false
-    },
-    avatar: {
-        type: DataTypes.STRING
-    }
-}, {
-    tableName: 'user',
-    timestamps: false
-});
-
-User.prototype.setPassword = async function (password) {
-    this.password_hash = await bcrypt.hash(expr password, 10);
-};
-
-User.prototype.checkPassword = async function (password) {
-    return await bcrypt.compare(password, this.password_hash);
-};
-
-User.sync();
-
-module.exports = User;
-```
-**`models/page.js`:**
-```
-const { Sequelize, DataTypes } = require('sequelize');
-const User = require('./user');
-
-const sequelize = new Sequelize('sqlite:./database.db', { logging: false });
-
-const Page = sequelize.define('Page', {
-    id: {
-        type: DataTypes.INTEGER,
-        primaryKey: true,
-        autoIncrement: true
-    },
-    title: {
-        type: DataTypes.STRING,
-        unique: true,
-        allowNull: false
-    },
-    content: {
-        type: DataTypes.TEXT,
-        allowNull: false
-    },
-    is_markdown: {
-        type: DataTypes.BOOLEAN,
-        allowNull: false,
-        defaultValue: true
-    }
-}, {
-    tableName: 'page',
-    timestamps: false
-});
-
-Page.belongsTo(User, { foreignKey: 'author_id' });
-User.hasMany(Page, { foreignKey: 'author_id' });
-
-Page.sync();
-
-module.exports = Page;
-```
-**`routes/auth.js` (Sequelize version):**
-```
-const express = require('express');
-const { body, validationResult } = require('express-validator');
-const User = require('../models/user');
-const router = express.Router();
-
-router.get('/register', (req, res) => {
-    res.render('register', { errors: [], messages: req.session.messages || [] });
-    req.session.messages = [];
-});
-
-router.post('/register', [
-    body('username').notEmpty().withMessage('Username is required').trim().isLength({ min: 3, max: 25 }),
-    body('password').notEmpty().withMessage('Password is required').isLength({ min: 6 })
-], async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
-        return res.redirect('/register');
-    }
-
-    const { username, password } = req.body;
-    const existingUser = await User.findOne({ where: { username } });
-    if (existingUser) {
-        req.session.messages = [{ category: 'danger', message: 'Username already exists!' }];
-        return res.redirect('/register');
-    }
-
-    const user = User.build({ username });
-    await user.setPassword(password);
-    await user.save();
-    req.session.messages = [{ category: 'success', message: 'Registration successful! Please log in.' }];
-    res.redirect('/login');
-});
-
-router.get('/login', (req, res) => {
-    res.render('login', { errors: [], messages: req.session.messages || [] });
-    req.session.messages = [];
-});
-
-router.post('/login', [
-    body('username').notEmpty().withMessage('Username is required'),
-    body('password').notEmpty().withMessage('Password is required')
-], async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
-        return res.redirect('/login');
-    }
-
-    const { username, password } = req.body;
-    const user = await User.findOne({ where: { username } });
-    if (!user || !(await user.checkPassword(password))) {
-        req.session.messages = [{ category: 'danger', message: 'Invalid username or password.' }];
-        return res.redirect('/login');
-    }
-
-    req.session.userId = user.id;
-    req.session.username = user.username;
-    req.session.messages = [{ category: 'success', message: 'Login successful!' }];
-    res.redirect('/profile');
-});
-
-router.get('/logout', (req, res) => {
-    req.session.destroy(() => {
-        res.redirect('/login');
-    });
-});
-
-module.exports = router;
-```
-**`routes/profile.js` (Sequelize version):**
-```
-const express = require('express');
-const multer = require('multer');
-const path = require('path');
-const User = require('../models/user');
-const { requireLogin } = require('../utils/auth');
-const router = express.Router();
-
-const upload = multer({
-    dest: 'public/avatars/',
-    fileFilter: (req, file, cb) => {
-        const allowedExtensions = ['.png', '.jpg', '.jpeg', '.gif'];
-        const ext = path.extname(file.originalname).toLowerCase();
-        if (allowedExtensions.includes(ext)) {
-            cb(null, true);
-        } else {
-            cb(new Error('Only images are allowed'));
+Both methods use **Promises** to wrap the database operations, allowing us to use `async/await` for clean, readable asynchronous code.  
+**`models/Page.js`**
+```javascript
+class Page {
+  static async create(db, title, content) {
+    return new Promise((resolve, reject) => {
+      db.run(
+        'INSERT INTO pages (title, content) VALUES (?, ?)',
+        [title, content],
+        function (err) {
+          if (err) reject(err)
+          resolve()
         }
-    }
-});
+      )
+    })
+  }
 
-router.get('/', requireLogin, async (req, res) => {
-    const user = await User.findByPk(req.session.userId);
-    if (!user) {
-        req.session.messages = [{ category: 'danger', message: 'User not found.' }];
-        return res.redirect('/login');
-    }
-    res.render('profile', { user: user.toJSON(), username: req.session.username, messages: req.session.messages || [] });
-    req.session.messages = [];
-});
+  static async findByTitle(db, title) {
+    return new Promise((resolve, reject) => {
+      db.get('SELECT * FROM pages WHERE title = ?', [title], (err, row) => {
+        if (err) reject(err)
+        resolve(row)
+      })
+    })
+  }
+}
 
-router.post('/', requireLogin, upload.single('avatar'), async (req, res) => {
-    if (!req.file) {
-        req.session.messages = [{ category: 'danger', message: 'No file selected or invalid file type.' }];
-        return res.redirect('/profile');
-    }
-    const user = await User.findByPk(req.session.userId);
-    user.avatar = req.file.filename;
-    await user.save();
-    req.session.messages = [{ category: 'success', message: 'Avatar updated!' }];
-    res.redirect('/profile');
-});
-
-module.exports = router;
+module.exports = Page
 ```
+The `Page.create(db, title, content)` method inserts a new wiki page into the database using `db.run()`. It safely passes the page title and content as parameters through `?` placeholders to prevent SQL injection.
 
-**Explanation:** Sequelize models (`User`, `Page`) define the database schema as JavaScript objects. The `setPassword` and `checkPassword` methods encapsulate `bcrypt` logic, while `Page.belongsTo(User)` establishes a relationship. Routes use model methods like `User.findOne` or `Page.create` instead of SQL, making the code portable across databases. **How to use:** Sequelize automatically syncs models with the database (`User.sync()`, `Page.sync()`). Users register and log in as before, but data is now stored persistently in SQLite.
-#### Updating Wiki Routes for SQLite
-To support the wiki functionality, we store pages in the `page` table, linking each page to its author via `author_id`. The `is_markdown` field distinguishes between Markdown and CKEditor content.  
-**`routes/wiki.js` (Sequelize version):**
-```
+The `Page.findByTitle(db, title)` method retrieves a page record from the database whose title matches the given one, using `db.get()`. If a matching page exists, it returns the row; otherwise, it returns `undefined`.
+
+Both methods use **Promises**, allowing us to call them with `await` in routes for cleaner asynchronous handling.
+#### Updating Routes
+Now We update our routes file to use the database models that we built.  
+**`routes/auth.js`**
+```javascript
 const express = require('express');
+const argon = require('argon2');
+const User = require('../models/User')
 const { body, validationResult } = require('express-validator');
-const marked = require('marked');
-const { requireLogin } = require('../utils/auth');
-const Page = require('../models/page');
-const User = require('../models/user');
 const router = express.Router();
 
-router.get('/wiki/:pageTitle', async (req, res) => {
-    const pageTitle = req.params.pageTitle;
-    const page = await Page.findOne({ where: { title: pageTitle }, include: [{ model: User, attributes: ['username'] }] });
-    if (!page) {
-        return res.status(404).render('404', { username: req.session.username, messages: [] });
-    }
-    page.htmlContent = page.is_markdown ? marked(page.content) : page.content;
-    res.render('wiki_page', { page: page.toJSON(), pageName: page.title, username: req.session.username, messages: [] });
-});
-
-router.get('/create', requireLogin, (req, res) => {
-    res.render('create_page', { username: req.session.username, errors: [], messages: req.session.messages || [] });
+router.get('/register', async (req, res) => {
+    const messages = req.session.messages || [];
+    const username = req.session.user?.username || null
+    const errors = req.session.errors || []
     req.session.messages = [];
+    req.session.errors = [];
+    await req.session.save();
+    res.render('register', { errors, messages  ,username });
 });
 
-router.post('/create', requireLogin, [
-    body('title').notEmpty().withMessage('Page title is required').trim(),
-    body('content').notEmpty().withMessage('Content is required')
+router.post('/register', [
+    body('username').notEmpty().withMessage('Username is required').trim().isLength({ min: 3, max: 25 }),
+    body('password').notEmpty().withMessage('Password is required').isLength({ min: 6 })
 ], async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
-        return res.redirect('/create');
+        req.session.errors = errors.errors;
+        await req.session.save();
+        return res.redirect('/register');
     }
-    const { title, content } = req.body;
+
+    const { username, password } = req.body;
+    const db = req.app.get('db');
+    const existingUser = await User.findByUsername(db,username);
+
+    if (existingUser) {
+      req.session.messages = [{ category: 'danger', message: 'Username already exists!' }]
+      await req.session.save();
+      return res.redirect('/register')
+    }
+
     try {
-        await Page.create({ title, content, author_id: req.session.userId, is_markdown: true });
-        res.redirect(`/wiki/${title}`);
+      await User.create(db, username, password);
+      req.session.messages = [{ category: 'success', message: 'Registration successful! Please log in.' }];
+      await req.session.save();
+      return res.redirect('/login');
     } catch (err) {
-        req.session.messages = [{ category: 'danger', message: 'Failed to create page.' }];
-        res.redirect('/create');
-    }
+      req.session.messages = [{ category: 'danger', message: 'Error creating user. Please try again.' }]
+      await req.session.save();
+      return res.redirect('/register')
+    }      
 });
 
-router.get('/create-ck', requireLogin, (req, res) => {
-    res.render('create_page_ck', { username: req.session.username, errors: [], messages: req.session.messages || [] });
+router.get('/login', async (req, res) => {
+    const messages = req.session.messages || [];
+    const username = req.session.user?.username || null
+    const errors = req.session.errors || []
     req.session.messages = [];
+    await req.session.save();
+    return res.render('login', { errors, messages ,username,errors});
 });
 
-router.post('/create-ck', requireLogin, [
-    body('title').notEmpty().withMessage('Page title is required').trim(),
-    body('content').notEmpty().withMessage('Content is required')
+router.post('/login', [
+    body('username').notEmpty().withMessage('Username is required'),
+    body('password').notEmpty().withMessage('Password is required')
 ], async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
-        return res.redirect('/create-ck');
+        
+        req.session.errors = errors.errors;
+        await req.session.save();
+        return res.redirect('/login');
     }
-    const { title, content } = req.body;
-    try {
-        await Page.create({ title, content, author_id: req.session.userId, is_markdown: false });
-        res.redirect(`/wiki/${title}`);
-    } catch (err) {
-        req.session.messages = [{ category: 'danger', message: 'Failed to create page.' }];
-        res.redirect('/create-ck');
-    }
+
+    const { username, password } = req.body;
+    const db = req.app.get('db');
+
+    const user =  await User.findByUsername(db,username);
+
+      if (user && await argon.verify(user.password_hash, password)) {
+        req.session.user = { username };
+        req.session.messages = [{ category: 'success', message: 'Login successful!' }];
+        await req.session.save();
+        return res.redirect('/');
+      } else {
+        req.session.messages = [{ category: 'danger', message: 'Invalid username or password.' }];
+        await req.session.save();
+        return res.redirect('/login');
+      }
+});
+
+
+router.get('/logout',  async  (req, res) => {
+    await req.session.destroy();
+    return res.redirect('/login');
 });
 
 module.exports = router;
 ```
-**`views/wiki_page.ejs` (unchanged from previous lecture):**
+We can see that we removed all the complexity of raw SQL queries and replaced them with clean method calls from our `User` model. We start by importing the `User` class from our models folder, which serves as the interface for all user-related database operations. This makes the routes much simpler and easier to read.
+
+In the **registration route**, instead of writing SQL manually, we call `User.findByUsername(db, username)` to check if a user already exists, and `User.create(db, username, password)` to add a new user. The `User` model takes care of hashing the password and inserting the data securely into the database, keeping our route focused only on validation and user feedback.
+
+In the **login route**, we use `User.findByUsername(db, username)` again to retrieve the stored user record, then verify the password using **Argon2**. If the password matches, we create a session for the user; otherwise, we return an error message.  
+
+**``routes/profile.js``**
+```javascript
+const User = require('../models/User')
+const express = require('express');
+const requireLogin = require('../middlewares/loginCheck.js');
+const upload = require('../middlewares/upload.js');
+const router = express.Router();
+
+router.get('/profile', requireLogin, async (req, res) => {
+  const username = req.session.user?.username || null;
+  const db = req.app.get('db');
+  const user =  await User.findByUsername(db,username);
+  
+
+    const messages = req.session.messages || [];
+    req.session.messages = [];
+    await req.session.save();
+    return res.render('profile', { user, username, messages });
+  });
+
+router.post('/profile', requireLogin, upload.single('avatar'), async (req, res) => {
+  const username = req.session.user?.username || null;
+  const db = req.app.get('db');
+
+  if (!req.file) {
+    req.session.messages = [{ category: 'danger', message: 'No file selected or invalid file type.' }];
+    await req.session.save();
+    return res.redirect('/profile');
+  }
+
+  const filename = req.file.filename;
+  try {
+    await User.updateAvatar(db, username, filename);
+    req.session.messages = [{ category: 'success', message: 'Avatar updated successfully!' }];
+    await req.session.save();
+    return res.redirect('/profile');
+  } catch (err) {
+    req.session.messages = [{ category: 'danger', message: 'Error updating avatar. Please try again.' }];
+    await req.session.save();
+    return res.redirect('/profile');
+  }
+  
+});
+
+module.exports = router;
 ```
-<%- include('layout') %>
-<h1><%= pageName %></h1>
-<p><em>By: <%= page.username %></em></p>
-<hr>
-<div>
-    <%- page.htmlContent %>
-</div>
+Same as before, we start by importing the `User` model, which handles all user-related database operations. We use `User.findByUsername(db, username)` to fetch the user’s data from the database, and when we want to update the avatar, we use `User.updateAvatar(db, username, filename)` from our model to update the avatar in the database, eliminating the need for raw SQL statements.  
+
+**`routes/wiki.js`**
+```javascript
+const express = require('express');
+const { body, validationResult } = require('express-validator');
+const requireLogin = require('../middlewares/loginCheck.js');
+const Page = require('../models/Page');
+const router = express.Router();
+
+
+router.get('/wiki/:pageName', async (req, res) => {
+    const db = req.app.get('db');
+    const pageName = req.params.pageName;
+    const username = req.session.user?.username || null;
+    const page = await Page.findByTitle(db, pageName);
+ 
+    if (!page) {
+      req.session.messages = [{ category: 'danger', message: 'This page don\'t exist' }];
+      await req.session.save();
+      return res.redirect('/404');
+    }
+    page.htmlContent = page.content;
+    return res.render('wiki_page', { page, pageName, username, messages: [] });
+  
+});
+
+router.get('/create', requireLogin, async (req, res) => {
+  const messages = req.session.messages || [];
+  const username = req.session.user?.username || null;
+  const errors = req.session.errors || [];
+
+  req.session.messages = [];
+  req.session.errors = [];
+  await req.session.save();
+
+  return res.render('create_page', { username, errors, messages });
+});
+
+router.post(
+  '/create',
+  requireLogin,
+  [
+    body('title').notEmpty().withMessage('Page title is required').trim(),
+    body('content').notEmpty().withMessage('Content is required')
+  ],
+  async (req, res) => {
+    const db = req.app.get('db');
+    const username = req.session.user?.username || null;
+    const errors = validationResult(req);
+
+    if (!errors.isEmpty()) {
+      req.session.errors = errors.errors;
+      await req.session.save();
+      return res.redirect('/create');
+    }
+
+    const { title, content } = req.body;
+    try{
+      await Page.create(db, title, content);
+      req.session.messages = [{ category: 'success', message: 'Page created successfully!' }];
+      await req.session.save();
+      return res.redirect(`/wiki/${title}`);
+    } catch(err){
+      req.session.messages = [{ category: 'danger', message: 'Error creating page. It might already exist.' }];
+      await req.session.save();
+      return res.redirect('/create');
+    }
+     
+  }
+);
+
+module.exports = router;
 ```
-**`views/create_page.ejs` (unchanged from previous lecture):**
-```
-<%- include('layout') %>
-<h1 class="page-title">Create a Wiki Page</h1>
+Finally for ``wiki.js`` route, we usethe `Page` model, which manages all database operations related to wiki pages. Instead of writing raw SQL queries, we now use methods from the model to handle data interactions.
 
-<form method="POST" class="form-card">
-    <label for="title">Page Title</label>
-    <input id="title" name="title" type="text" required>
-    <% errors.forEach(error => { %>
-        <% if (error.param === 'title') { %>
-            <span style="color:red;"><%= error.msg %></span><br>
-        <% } %>
-    <% }) %>
+We use `Page.findByTitle(db, pageName)` to retrieve a page’s content from the database and display it to the user. When creating a new page, we call `Page.create(db, title, content)` to insert the page into the database.  
 
-    <label for="content">Content (Markdown supported)</label>
-    <textarea id="content" name="content" rows="12" placeholder="# Heading
-Write your text here...
-- bullet list
-**bold text**
-*italic text*"></textarea>
-    <% errors.forEach(error => { %>
-        <% if (error.param === 'content') { %>
-            <span style="color:red;"><%= error.msg %></span><br>
-        <% } %>
-    <% }) %>
+We didn’t need to make any changes to the `app.js` file.
 
-    <div class="form-actions">
-        <button type="submit" class="btn btn-primary">Create Page</button>
-    </div>
-</form>
-
-<div class="card" style="margin-top:16px;">
-    <h3>Markdown Quick Reference</h3>
-    <ul>
-        <li><code># Heading</code> → Heading</li>
-        <li><code>**bold**</code> → <strong>bold</strong></li>
-        <li><code>*italic*</code> → <em>italic</em></li>
-        <li><code>- Item</code> → bullet list</li>
-        <li><code>[Link](https://example.com)</code> → link</li>
-    </ul>
-</div>
-```
-**`views/create_page_ck.ejs` (unchanged from previous lecture):**
-```
-<%- include('layout') %>
-<h1 class="page-title">Create a Wiki Page (CKEditor)</h1>
-
-<form method="POST" class="form-card">
-    <label for="title">Page Title</label>
-    <input id="title" name="title" type="text" required>
-    <% errors.forEach(error => { %>
-        <% if (error.param === 'title') { %>
-            <span style="color:red;"><%= error.msg %></span><br>
-        <% } %>
-    <% }) %>
-
-    <label for="content">Content</label>
-    <textarea id="content" name="content"></textarea>
-    <% errors.forEach(error => { %>
-        <% if (error.param === 'content') { %>
-            <span style="color:red;"><%= error.msg %></span><br>
-        <% } %>
-    <% }) %>
-
-    <div class="form-actions">
-        <button type="submit" class="btn btn-primary">Create Page</button>
-    </div>
-</form>
-
-<script src="/ckeditor/ckeditor.js"></script>
-<script>
-    CKEDITOR.replace('content');
-</script>
-```
-**Explanation:** The wiki routes store pages in the `page` table, using `author_id` to link to the `user` table. The `/wiki/:pageTitle` route fetches a page and its author’s username, rendering Markdown or CKEditor content. The `/create` and `/create-ck` routes allow logged-in users to create pages, with `is_markdown` determining the content type.   
-**How to use:** Users visit `/create` to write Markdown pages or `/create-ck` for a visual editor. Pages are stored persistently and accessible via `/wiki/:pageTitle`.
-### Restructuring Our Project
-The modular structure ensures scalability and collaboration.  
-**Why it matters:** A single `app.js` file with all logic becomes unmanageable as the app grows. By separating routes, models, and utilities, we make it easier to add features (e.g., page editing, comments) and maintain the codebase.    
-**How to use:** Developers work on specific modules (e.g., routes for new features, models for database changes) without affecting other parts. Run `node app.js` to start the server, and test the app at `http://localhost:3000`.
+With this new structure, our code becomes much more readable, easier to maintain, and more scalable. By separating raw SQL queries from the route logic, we achieve a clear separation of concerns  our JavaScript files now focus on application flow, while the models handle all database operations in a clean and reusable way.

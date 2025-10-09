@@ -49,10 +49,15 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const router = express.Router();
 
-router.get('/register', (req, res) => {
+router.get('/register', async(req, res) => {
     
+    const messages = req.session.messages || [];
+    const username = req.session.user?.username || null
+    const errors = req.session.errors || []
     req.session.messages = [];
-    res.render('register', { errors: [], messages: req.session.messages || [] ,username: req.session.user?.username || null});
+    req.session.errors = [];
+    await req.session.save();
+    res.render('register', { errors, messages , username});
 });
 
 router.post('/register', [
@@ -61,7 +66,7 @@ router.post('/register', [
 ], async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
+        req.session.errors = errors.errors;
         await req.session.save();
         return res.redirect('/register');
     }
@@ -81,9 +86,12 @@ router.post('/register', [
 
 router.get('/login', async (req, res) => {
       const messages = req.session.messages || [];
-      req.session.messages = [];
-      await req.session.save();
-      res.render('login', { errors: [], messages ,username: req.session.user?.username || null});
+    const username = req.session.user?.username || null
+    const errors = req.session.errors || []
+    req.session.messages = [];
+    req.session.errors = [];
+    await req.session.save();
+      res.render('login', { errors, messages ,username});
 });
 
 router.post('/login', [
@@ -92,7 +100,7 @@ router.post('/login', [
 ], async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
+        req.session.errors = errors.errors;
         await req.session.save();
         return res.redirect('/login');
     }
@@ -147,7 +155,7 @@ When the registration form is submitted, the server receives the `username` and 
     If the username is new, it will create the username with the password and save them.  
     
 4. **User Creation:**  
-    The new user is stored in the `app.locals.users` object with the  password and a placeholder for the avatar field.
+    The new user is stored in the `req.app.locals.users` object with the  password and a placeholder for the avatar field.
     
 5. **Feedback and Redirect:**  
     A success flash message (“Registration successful! Please log in.”) is saved, and the user is redirected to the `/login` page.
@@ -601,10 +609,13 @@ router.get('/wiki/:pageName', async (req, res) => {
 });
 
 router.get('/create', requireLogin, async (req, res) => {
-    const username = req.session.user?.username || null;
+    const messages = req.session.messages || [];
+    const username = req.session.user?.username || null
+    const errors = req.session.errors || []
     req.session.messages = [];
+    req.session.errors = [];
     await req.session.save();
-    res.render('create_page', { username: username, errors: [], messages: req.session.messages || [] });
+    res.render('create_page', { username, errors, messages});
 });
 
 router.post('/create', requireLogin, [
@@ -614,7 +625,7 @@ router.post('/create', requireLogin, [
     const username = req.session.user?.username || null;
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
+        req.session.errors = errors.errors;
         await req.session.save();
         return res.redirect('/create');
     }
@@ -882,10 +893,13 @@ router.get('/wiki/:pageName', (req, res) => {
 });
 
 router.get('/create', requireLogin, async (req, res) => {
-    const username = req.session.user?.username || null;
+    const messages = req.session.messages || [];
+    const username = req.session.user?.username || null
+    const errors = req.session.errors || []
     req.session.messages = [];
+    req.session.errors = [];
     await req.session.save();
-    res.render('create_page', { username: username, errors: [], messages: req.session.messages || [] });
+    res.render('create_page', { username, errors, messages});
 });
 
 router.post('/create', requireLogin, [
@@ -895,7 +909,7 @@ router.post('/create', requireLogin, [
     const username = req.session.user?.username || null;
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
+        req.session.errors = errors.errors;
         await req.session.save();
         return res.redirect('/create');
     }
@@ -950,9 +964,10 @@ const upload = multer({
 router.get('/profile', requireLogin, async (req, res) => {
     const username = req.session.user?.username || null;
     const user = req.app.locals.users[username];
-    await req.session.save();
+    const messages = req.session.messages || []
     req.session.messages = [];
-    res.render('profile', { user, username: username, messages: req.session.messages || [] });
+    await req.session.save()
+    res.render('profile', { user, username, messages });
 });
 
 router.post('/profile', requireLogin, upload.single('avatar'), async (req, res) => {
@@ -1127,7 +1142,7 @@ We noticed that the requireLogin middleware is declared in both ``wiki.js`` and 
 Inside this folder, we’ll add a new file (for example, ``logincheck.js``) and move the requireLogin function there. Then, we can simply import it wherever it’s needed, such as in ``wiki.js`` and ``profile.js``.  
 **``middlewares/loginCheck.js``**
 
-```
+```javascript
 const requireLogin = async (req, res, next) => {
     const username = req.session.user?.username || null;
     if (!username) {
@@ -1171,7 +1186,7 @@ module.exports = upload;
 Now, we update the ``wiki.js`` and ``profile.js`` files we remove the duplicate ``requireLogin`` and ``multer`` setup code from both files and replace them with imports of the middleware functions we created earlier.  
 This makes our routes easier to read, reduces repetition, and ensures consistent behavior across the application.  
 **`routes/wiki.js`:**
-```
+```javascript
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const requireLogin = require('../middlewares/loginCheck.js');
@@ -1190,10 +1205,13 @@ router.get('/wiki/:pageName', (req, res) => {
 });
 
 router.get('/create', requireLogin, async (req, res) => {
-    const username = req.session.user?.username || null;
+    const messages = req.session.messages || [];
+    const username = req.session.user?.username || null
+    const errors = req.session.errors || []
     req.session.messages = [];
+    req.session.errors = [];
     await req.session.save();
-    res.render('create_page', { username: username, errors: [], messages: req.session.messages || [] });
+    res.render('create_page', { username, errors, messages});
 });
 
 router.post('/create', requireLogin, [
@@ -1203,7 +1221,7 @@ router.post('/create', requireLogin, [
     const username = req.session.user?.username || null;
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
+        req.session.errors = errors.errors;
         await req.session.save();
         return res.redirect('/create');
     }
@@ -1214,21 +1232,20 @@ router.post('/create', requireLogin, [
 module.exports = router;
 ```
 **`routes/profile.js`:**
-```
+```javascript
 const express = require('express');
 const requireLogin = require('../middlewares/loginCheck.js');
 const upload = require('../middlewares/upload.js');
 
 const router = express.Router();
 
-
-
 router.get('/profile', requireLogin, async (req, res) => {
     const username = req.session.user?.username || null;
     const user = req.app.locals.users[username];
-    await req.session.save();
+    const messages = req.session.messages || []
     req.session.messages = [];
-    res.render('profile', { user, username: username, messages: req.session.messages || [] });
+    await req.session.save()
+    res.render('profile', { user, username, messages });
 });
 
 router.post('/profile', requireLogin, upload.single('avatar'), async (req, res) => {

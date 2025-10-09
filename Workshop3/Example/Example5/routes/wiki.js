@@ -16,10 +16,13 @@ router.get('/wiki/:pageName', (req, res) => {
 });
 
 router.get('/create', requireLogin, async (req, res) => {
-    const username = req.session.user?.username || null;
+    const messages = req.session.messages || [];
+    const username = req.session.user?.username || null
+    const errors = req.session.errors || []
     req.session.messages = [];
+    req.session.errors = [];
     await req.session.save();
-    res.render('create_page', { username: username, errors: [], messages: req.session.messages || [] });
+    res.render('create_page', { username, errors, messages});
 });
 
 router.post('/create', requireLogin, [
@@ -29,7 +32,7 @@ router.post('/create', requireLogin, [
     const username = req.session.user?.username || null;
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
+        req.session.errors = errors.errors;
         await req.session.save();
         return res.redirect('/create');
     }

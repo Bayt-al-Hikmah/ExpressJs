@@ -7,11 +7,13 @@ const router = express.Router();
 
 
 router.get('/profile', requireLogin, async (req, res) => {
-    const username = req.session.user?.username || null;
+     const username = req.session.user?.username || null;
     const user = req.app.locals.users[username];
-    await req.session.save();
+    const messages = req.session.messages || []
     req.session.messages = [];
-    res.render('profile', { user, username: username, messages: req.session.messages || [] });
+    await req.session.save();
+    res.render('profile', { user, username, messages});
+    
 });
 
 router.post('/profile', requireLogin, upload.single('avatar'), async (req, res) => {

@@ -2,10 +2,14 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const router = express.Router();
 
-router.get('/register', (req, res) => {
-    
+router.get('/register', async(req, res) => {
+    const messages = req.session.messages || [];
+    const username = req.session.user?.username || null
+    const errors = req.session.errors || []
     req.session.messages = [];
-    res.render('register', { errors: [], messages: req.session.messages || [] ,username: req.session.user?.username || null});
+    req.session.errors = [];
+    await req.session.save();
+    res.render('register', { errors, messages ,username});
 });
 
 router.post('/register', [
@@ -14,7 +18,7 @@ router.post('/register', [
 ], async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
+        req.session.errors = errors.errors;
         await req.session.save();
         return res.redirect('/register');
     }
@@ -33,10 +37,13 @@ router.post('/register', [
 });
 
 router.get('/login', async (req, res) => {
-      const messages = req.session.messages || [];
-      req.session.messages = [];
-      await req.session.save();
-      res.render('login', { errors: [], messages ,username: req.session.user?.username || null});
+    const messages = req.session.messages || [];
+    const username = req.session.user?.username || null
+    const errors = req.session.errors || []
+    req.session.messages = [];
+    req.session.errors = [];
+    await req.session.save();
+      res.render('login', { errors, messages ,username});
 });
 
 router.post('/login', [
@@ -45,7 +52,7 @@ router.post('/login', [
 ], async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        req.session.messages = errors.array().map(err => ({ category: 'danger', message: err.msg }));
+        req.session.errors = errors.errors;
         await req.session.save();
         return res.redirect('/login');
     }

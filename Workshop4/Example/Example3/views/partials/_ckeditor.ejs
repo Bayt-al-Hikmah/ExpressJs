@@ -1,0 +1,14 @@
+ <script src="script/ckeditor.js"> </script>
+ <script >
+
+    let editorInstance;
+    ClassicEditor.create(document.querySelector('#content'))
+      .then(editor => {
+        editorInstance = editor;
+      })
+      .catch(console.error);
+
+    document.querySelector('#editorForm').addEventListener('submit', e => {
+      document.querySelector('#content').value = editorInstance.getData();
+    });
+  </script>
