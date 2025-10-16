@@ -335,9 +335,7 @@ CREATE TABLE pages (
 );
 ```
 
-**Initialize the Database**  
-We run the schema to create the database file:
-
+### Initialize the Database
 First we connect and create the database file
 
 ```shell
@@ -358,13 +356,14 @@ Then we quit the sqlite terminal using
 
 This creates database.db with the user table, ready for use.
 ### Connecting Express with SQLite
-The `sqlite3` package lets us connect to SQLite and execute queries. We use parameterized queries (`?`) to prevent SQL injection, a security risk where malicious input could manipulate database queries.  
+The `sqlite3` package lets us connect to SQLite and execute queries.
+
 
 **Install SQLite3**
 ```shell
 npm install sqlite3
 ```
-Now we create the middlwares to contact with the database
+Now we create the middlwares to contact with the database.  
 **`middlewares/dbMiddleware.js`**
 ```javascript
 const sqlite3 = require('sqlite3').verbose();
@@ -419,7 +418,7 @@ Finally, we set our middlware to listens for two system signals `SIGINT` (like w
 
 At the end, the middleware calls `next()` so Express continues to the next handler or route.
 
-#### Editing the routes
+### Editing the routes
 Now we’ll update our routes to use the database for storing and retrieving data instead of relying on local storage.
 **`routes/auth.js`**
 ```javascript
@@ -536,7 +535,7 @@ module.exports = router;
 ```
 In this code, we use a real database instead of local storage to store and retrieve user data. When we register a user, we insert their information into the database using the ``db.run()`` method, and when we need to check if a username already exists or verify login credentials, we use ``db.get()`` to retrieve a single record.We use question marks (`?`) as placeholders for example, ``db.get('SELECT * FROM users WHERE username = ?', [username], ...)``. These placeholders make our queries safe from SQL injection. Instead of directly inserting user input into the SQL string, the database automatically replaces the ``?`` with the actual values from the array (like [username, hashed_password]) in a secure way. This ensures that any special characters or malicious input from users are treated as data, not as SQL commands. For example, if someone tried to enter a harmful input like ``john'); DROP TABLE users; --``, it would not break our query or damage the database because the database engine escapes it properly.
 
-We also use Promises to make our database operations cleaner and easier to manage. Normally, database functions like ``db.get()`` and ``db.run()`` use callbacks, which can quickly make the code messy and hard to follow. To improve readability, we wrap these calls inside Promises and then use await to pause the execution until the database responds. If the operation succeeds, the Promise resolves with the result (like the retrieved row), and if there’s an error, it rejects and throws an exception. This allows us to write database logic in a more straightforward, synchronous-looking style using async/await.  
+We also use Promises to make our database operations cleaner and easier to manage. Normally, database functions like ``db.get()`` and ``db.run()`` use callbacks, which can quickly make the code messy and hard to follow. To improve readability, we wrap these calls inside Promises and then use await to pause the execution until the database responds. If the operation succeeds, the Promise resolves with the result (like the retrieved row), and if there’s an error, it rejects and throws an exception. This allows us to write database logic in a more straightforward, synchronous-looking style using async/await.   
 **`routes/profile.js`**
 ```javascript
 const express = require('express');
@@ -737,13 +736,13 @@ app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
 });
 ```
-### Refactoring with a User Class
+## Refactoring with a User Class
 
 Our SQLite-based app works well, but the current routes contain raw SQL queries, mixing database logic with request handling. This approach breaks the **DRY (Don’t Repeat Yourself)** principle and makes maintenance harder since we repeat queries like `SELECT * FROM users WHERE username = ?` in multiple places. It also couples the route logic too closely with the database structure, reducing flexibility and scalability.
 
 To improve this, we’ll introduce `User` and `Page` classes that encapsulate all database operations. These classes will provide clean, reusable methods for actions such as creating a user, finding one by username, or managing wiki pages. By separating data access from route logic, our code becomes more organized, maintainable, and easier to extend in the future.  
-#### Creating the model class
-We first start with creating the User class  
+### Creating the model class
+We first start with creating the User class   
 **``models/User.js``**
 ```javascript
 const argon2 = require('argon2')
@@ -823,7 +822,7 @@ The `Page.create(db, title, content)` method inserts a new wiki page into the da
 The `Page.findByTitle(db, title)` method retrieves a page record from the database whose title matches the given one, using `db.get()`. If a matching page exists, it returns the row; otherwise, it returns `undefined`.
 
 Both methods use **Promises**, allowing us to call them with `await` in routes for cleaner asynchronous handling.
-#### Updating Routes
+### Updating Routes
 Now We update our routes file to use the database models that we built.  
 **`routes/auth.js`**
 ```javascript
@@ -1055,11 +1054,11 @@ We use `Page.findByTitle(db, pageName)` to retrieve a page’s content from the 
 We didn’t need to make any changes to the `app.js` file.
 
 With this new structure, our code becomes much more readable, easier to maintain, and more scalable. By separating raw SQL queries from the route logic, we achieve a clear separation of concerns  our JavaScript files now focus on application flow, while the models handle all database operations in a clean and reusable way.
-### Using Prisma
+## Using Prisma
 While the `User` class helped organize our code, we were still manually writing SQL queries, which can quickly become difficult to maintain as the application grows. Switching to another database system like PostgreSQL or MySQL would require rewriting most of those queries. Managing relationships, such as linking users to their wiki pages, also introduces extra complexity and repetitive SQL.
 
 This is where **Prisma**, a modern **TypeScript- and JavaScript-friendly ORM**, comes in. Prisma lets us define our database structure using a clean schema file and automatically generates a powerful client for interacting with our data. Instead of writing raw SQL, we use intuitive, object-oriented methods like `prisma.user.create()` or `prisma.page.findUnique()`. This makes database operations safer, easier to read, and portable across multiple database engines, while also providing built-in validation, type safety, and relationship management.
-#### Updating Our Project
+### Updating Our Project
 
 We’ll begin by removing the old files `models/User.js`, `models/Page.js`, and `middlewares/dbMiddleware.js`  since Prisma will handle all database interactions for us.
 
@@ -1079,7 +1078,7 @@ SESSION_SECRET=oihgahahvaaiohaehahvaai594qqfqq61
 NODE_ENV=development
 DATABASE_URL="file:./database.db"
 ```
-#### Define Our Prisma models
+### Define Our Prisma models
 Prisma uses its own **Prisma Schema Language (PSL)** to describe the structure of our database including models, their fields, and relationships.
 
 To create and define our models, we open the `prisma/schema.prisma` file. Here, we can define tables like `User` and `Page` as models, specifying their columns, data types, and how they relate to one another. Prisma will then use this schema to generate the corresponding database tables and a fully type-safe client for interacting with them.
@@ -1142,7 +1141,7 @@ This command:
 - Applies our schema changes (models) as a migration.
 - Generates the Prisma client, which we can import and use in our Node.js app.
 
-#### Updating The routes
+### Updating The routes
 Now we update the routes to work prisma.  
 **``routes/auth.js``**
 ```javascript
@@ -1397,8 +1396,8 @@ module.exports = router;
 Finally for the `wiki.js` file. When a user visits a wiki page, `prisma.page.findUnique()` searches the database for a page with the given title and automatically includes the related author data thanks to the `include: { author: true }` option. This makes it easy to fetch both the page content and its creator in a single, clean query.
 
 When creating a new page, we use `prisma.user.findUnique()` to get the currently logged-in user and then call `prisma.page.create()` to insert the new page into the database. Prisma’s relational mapping lets us directly connect the new page to its author using `{ connect: { id: user.id } }`  no need to manually manage foreign keys or write SQL statements.
-#### Updating The app.js file
-Now we do finall update on the `app.js` file, we remove the use of the ``dbMiddleware``   
+### Updating The app.js file
+Now we do finall update on the `app.js` file, we remove the use of the ``dbMiddleware``    
 **``app.js``**
 ```javascript
 const express = require('express');
