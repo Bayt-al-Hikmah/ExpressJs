@@ -474,3 +474,224 @@ The code listens for form submissions and button clicks, then makes API calls us
 Helper functions handle view switching, displaying messages, and ensuring that only logged-in users can access protected sections.
 
 The file is currently in the ``materials`` folder. We should move it  to the ``public/js`` folder so it can be served as a static asset by Express.
+### Token-Based Authentication 
+In the current Task Manager API, we use iron-session to manage authentication. This approach is effective for traditional web applications where the server and client are closely tied, and the browser handles session cookies automatically.
+
+However, modern APIs often require authentication that is stateless and can be easily used by various clients (mobile apps, other servers, JavaScript frontends). This is where Token-Based Authentication comes in.
+#### How Tokens Work
+Instead of the server storing session data for every user (stateful), the server issues a secure, self-contained token (like a JSON Web Token or JWT) upon successful login.
+1. **Client Logs In:** The user sends credentials (username/password) to the `/api/login` endpoint.
+2. **Server Generates Token:** If successful, the server creates a unique token containing the user's ID, expiration time, and a secure signature. The token is returned in the response.
+3. **Client Stores Token:** The frontend (e.g., JavaScript) stores this token (usually in local storage).
+4. **API Access:** For every subsequent request to protected endpoints (e.g., `/api/tasks`), the client includes this token in the `Authorization` header, typically prefixed with `Bearer`.
+5. **Server Verification:** The server receives the request, verifies the token's signature, extracts the user ID, and grants access. No database lookup for a session is required, making the API stateless and faster.
+#### Implementing Token Authentication with Flask
+While Express is flexible and lightweight, it does not provide built-in support for **JWT (JSON Web Token)** authentication. To generate, sign, and verify JWTs, we use a dedicated library such as **`jsonwebtoken`**.
+
+JWT authentication allows us to build **stateless APIs**, where the server does not store session data. Instead, the authentication state is stored inside a token that is sent with each request.  
+
+We start by installing the required packages:
+```shell
+npm install jsonwebtoken
+```
+#### Configuring Our App
+Now, instead of using sessions, we configure our Express application to use JWT-based authentication.  
+
+First, we define a secret key* used to sign and verify tokens, along with token expiration settings. These values are usually stored in environment variables.
+**`.env`**
+```
+JWT_SECRET = aaavoapoq9852e29f22à¨bè^.^én
+JWT_EXPIRES_IN = '1h'
+```
+We remove the session middleware as we don't need it anymore and also we remove it from the ``app.js`` file. 
+#### Editing Login EndPoint
+Now we need to edit our  **`api/Auth.py`**, we modify the ``login`` route to generate and return a token instead of setting a session variable:
+```js
+const jwt = require('jsonwebtoken');
+
+
+router.post('/login', async (req, res) => {
+  const { email, password } = req.body;
+
+  const user = await prisma.user.findUnique({
+    where: { email },
+  });
+
+  if (!user || !(await argon2.verify(user.password, password))) {
+    return res.status(401).json({ message: 'Invalid email or password' });
+  }
+
+  const token = jwt.sign(
+    { userId: user.id },
+    process.env.JWT_SECRET,
+    { expiresIn: '1h' }
+  );
+
+  res.json({
+    message: 'Login successful',
+    access_token:token
+  });
+});
+```
+We returning access token to our front end, we can save them and send them in our requests.
+
+#### Applying The JWT on Task and User EndPoint
+Finally we add protection to `/api/Tasks` and `/api/Users`  , we use the `jwt.verify` to verify the token in the request header, and if valid, makes the user's identity available via `payload.userId`:
+**``api/User.js``**
+```js
+const express = require('express');
+const argon2 = require('argon2');
+const jwt = require('jsonwebtoken');
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+const router = express.Router();
+
+function requireAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+  const token = authHeader.split(' ')[1];
+
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    req.userId = payload.userId;
+    next();
+  } catch (err) {
+    return res.status(401).json({ message: 'Invalid or expired token' });
+  }
+}
+
+router.get('/', requireAuth, async (req, res) => {
+  const user = await prisma.user.findUnique({
+    where: { id: req.userId},
+  });
+
+  res.json({
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    avatar: user.avatar,
+  });
+});
+
+router.put('/', requireAuth, async (req, res) => {
+  const { username, email, avatar } = req.body;
+  await prisma.user.update({
+    where: { id: req.userId },
+    data: {
+      username: username ?? undefined,
+      email: email ?? undefined,
+      avatar: avatar ?? undefined,
+    },
+  });
+  res.json({ message: 'User profile updated successfully' });
+});
+
+router.patch('/password', requireAuth, async (req, res) => {
+  const { password } = req.body;
+  const hashedPassword = await argon2.hash(password);
+  await prisma.user.update({
+    where: { id: req.userId },
+    data: { password: hashedPassword },
+  });
+  res.json({ message: 'Password updated successfully' });
+});
+module.exports = router;
+```
+**``api/Task.js``**
+```js
+const express = require('express');
+const jwt = require('jsonwebtoken');
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+const router = express.Router();
+
+function requireAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+  const token = authHeader.split(' ')[1];
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    req.userId = payload.userId;
+    next();
+  } catch (err) {
+    return res.status(401).json({ message: 'Invalid or expired token' });
+  }
+}
+
+router.get('/', requireAuth, async (req, res) => {
+  const tasks = await prisma.task.findMany({
+    where: { userId: req.userId },
+
+  });
+  res.json(
+    tasks.map(task => ({
+      id: task.id,
+      name: task.name,
+      state: task.state,
+      createdAt: task.createdAt,
+    }))
+  );
+});
+
+router.post('/', requireAuth, async (req, res) => {
+  const { name } = req.body;
+  await prisma.task.create({
+    data: {
+      name,
+      userId: req.userId,
+    },
+  });
+  res.status(201).json({ message: 'Task created successfully' });
+});
+
+router.put('/:taskId', requireAuth, async (req, res) => {
+  const { taskId } = req.params;
+  const { name, state } = req.body;
+  const task = await prisma.task.findFirst({
+    where: { id: parseInt(taskId), userId: req.userId },
+  });
+  if (!task) {
+    return res.status(404).json({ message: 'Task not found' });
+  }
+  await prisma.task.update({
+    where: { id: task.id },
+    data: {
+      name: name ?? undefined,
+      state: state ?? undefined,
+    },
+  });
+  res.json({ message: 'Task updated successfully' });
+
+});
+
+router.delete('/:taskId', requireAuth, async (req, res) => {
+  const { taskId } = req.params;
+  const task = await prisma.task.findFirst({
+    where: { id: parseInt(taskId), userId: req.userId  },
+  });
+
+  if (!task) {
+    return res.status(404).json({ message: 'Task not found' });
+  }
+  await prisma.task.delete({
+    where: { id: task.id },
+  });
+  res.json({ message: 'Task deleted successfully' });
+});
+module.exports = router;
+```
+This simple change moves the application from stateful (session) to stateless (token) authentication, which is the standard for building high-performance APIs.
+#### Editing the Javascript
+Now we update our JavaScript to work with JWT authentication. When a user logs in, the backend returns a token, which we store in the browser using:
+```javascript
+localStorage.setItem('token', data.access_token);
+```
+For every subsequent API request, we need to include this token in the Authorization header so the backend can verify the user. This is done by adding:
+```js
+'Authorization': `Bearer ${localStorage.getItem('token')}` 
+```
+to the headers of each `fetch` request. This ensures that only authenticated users can access protected endpoints.
