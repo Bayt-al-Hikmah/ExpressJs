@@ -1,6 +1,6 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const { taskLimiter } = require('../middleware/limit');
+const { taskLimiter } = require('../middlewares/limit');
 const { PrismaClient } = require('@prisma/client');
 
 const prisma = new PrismaClient();

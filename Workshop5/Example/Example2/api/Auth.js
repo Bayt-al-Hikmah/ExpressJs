@@ -1,15 +1,17 @@
 const express = require('express');
 const argon2 = require('argon2');
 const jwt = require('jsonwebtoken');
+const upload = require('../middlewares/upload.js');
+
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 const router = express.Router();
 
 
-router.post('/register', async (req, res) => {
-  const { username, email, password, avatar } = req.body;
-
+router.post('/register',upload.single('avatar'), async (req, res) => {
+  const { username, email, password } = req.body;
+  const filename = req.file.filename;
   const hashedPassword = await argon2.hash(password);
 
   await prisma.user.create({
@@ -17,7 +19,7 @@ router.post('/register', async (req, res) => {
       username,
       email,
       password: hashedPassword,
-      avatar,
+      avatar:filename,
     },
   });
 

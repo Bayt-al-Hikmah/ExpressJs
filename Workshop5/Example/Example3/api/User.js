@@ -1,6 +1,7 @@
 const express = require('express');
 const argon2 = require('argon2');
 const jwt = require('jsonwebtoken');
+const upload = require('../middlewares/upload.js');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
@@ -34,19 +35,19 @@ router.get('/', requireAuth, async (req, res) => {
     id: user.id,
     username: user.username,
     email: user.email,
-    avatar: user.avatar,
+    avatar: "avatars/" + user.avatar,
   });
 });
 
-router.put('/', requireAuth, async (req, res) => {
-  const { username, email, avatar } = req.body;
-
+router.put('/', requireAuth, upload.single('avatar'), async (req, res) => {
+  const { username, email, } = req.body;
+  const filename = req.file.filename;
   await prisma.user.update({
     where: { id: req.userId },
     data: {
       username: username ?? undefined,
       email: email ?? undefined,
-      avatar: avatar ?? undefined,
+      avatar: filename ?? undefined,
     },
   });
 

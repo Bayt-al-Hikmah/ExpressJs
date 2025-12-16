@@ -66,7 +66,7 @@ After initializing the project, it’s time to install the packages required for
 
 For this project, we will use **Express** as the web framework,**ejs** template engine, **iron-session** for session management, **prisma** as an ORM for database interaction, **dotenv** for environment variables, and **argon2** for secure password hashing.
 ```
-npm install express iron-session prisma  @prisma/client sqlite3 dotenv argon2
+npm install express iron-session prisma  @prisma/client sqlite3 dotenv argon2 multer
 ```
 
 ### Creating Database Models 
@@ -168,6 +168,31 @@ const session = await getIronSession(req, res, {
   next();
 };
 ```
+### File Uploading Middleware
+Next we create middleware that will help us to deal with uploading avatar
+
+**`middlewares/upload.js`**
+```js
+const multer = require('multer');
+const path = require('path');
+
+
+const upload = multer({
+    dest: 'public/avatars/', 
+    fileFilter: (req, file, cb) => {
+        const allowedExtensions = ['.png', '.jpg', '.jpeg', '.gif'];
+        const ext = path.extname(file.originalname).toLowerCase();
+
+        if (allowedExtensions.includes(ext)) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only images are allowed'));
+        }
+    }
+});
+
+module.exports = upload;
+```
 ### Building the REST API
 Now it’s time to build our REST API to connect our application with the server and the database. The RESTful API exposes resources as endpoints, allowing the frontend to communicate with our backend using standard HTTP methods.
 
@@ -201,15 +226,17 @@ Now let’s start creating our API resources. We begin with the authentication r
 ```js
 const express = require('express');
 const argon2 = require('argon2');
+const upload = require('../middlewares/upload.js');
+
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 const router = express.Router();
 
 
-router.post('/register', async (req, res) => {
-  const { username, email, password, avatar } = req.body;
-
+router.post('/register',upload.single('avatar'), async (req, res) => {
+  const { username, email, password } = req.body;
+  const filename = req.file.filename;
   const hashedPassword = await argon2.hash(password);
 
   await prisma.user.create({
@@ -217,7 +244,7 @@ router.post('/register', async (req, res) => {
       username,
       email,
       password: hashedPassword,
-      avatar,
+      avatar:filename,
     },
   });
 
@@ -267,6 +294,7 @@ Through the User resource, a logged-in user can view their profile information, 
 ```js
 const express = require('express');
 const argon2 = require('argon2');
+const upload = require('../middlewares/upload.js');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
@@ -288,19 +316,19 @@ router.get('/', requireLogin, async (req, res) => {
     id: user.id,
     username: user.username,
     email: user.email,
-    avatar: user.avatar,
+    avatar: 'avatars/'+user.avatar,
   });
 });
 
-router.put('/', requireLogin, async (req, res) => {
-  const { username, email, avatar } = req.body;
-
+router.put('/', requireLogin,upload.single('avatar'), async (req, res) => {
+  const { username, email} = req.body;
+  const filename = req.file.filename;
   await prisma.user.update({
     where: { id: req.session.userId },
     data: {
       username: username ?? undefined,
       email: email ?? undefined,
-      avatar: avatar ?? undefined,
+      avatar: filename?? undefined,
     },
   });
 
@@ -542,61 +570,71 @@ Finally we add protection to `/api/Tasks` and `/api/Users`  , we use the `jwt.ve
 const express = require('express');
 const argon2 = require('argon2');
 const jwt = require('jsonwebtoken');
+const upload = require('../middlewares/upload.js');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+
 const router = express.Router();
 
 function requireAuth(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ message: 'Unauthorized' });
-  }
-  const token = authHeader.split(' ')[1];
+  const authHeader = req.headers.authorization;
 
-  try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
-    req.userId = payload.userId;
-    next();
-  } catch (err) {
-    return res.status(401).json({ message: 'Invalid or expired token' });
-  }
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  const token = authHeader.split(' ')[1];
+
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    req.userId = payload.userId;
+    next();
+  } catch (err) {
+    return res.status(401).json({ message: 'Invalid or expired token' });
+  }
 }
 
-router.get('/', requireAuth, async (req, res) => {
-  const user = await prisma.user.findUnique({
-    where: { id: req.userId},
-  });
 
-  res.json({
-    id: user.id,
-    username: user.username,
-    email: user.email,
-    avatar: user.avatar,
-  });
+router.get('/', requireAuth, async (req, res) => {
+  const user = await prisma.user.findUnique({
+    where: { id: req.userId},
+  });
+
+  res.json({
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    avatar: 'avatars/' + user.avatar,
+  });
 });
 
-router.put('/', requireAuth, async (req, res) => {
-  const { username, email, avatar } = req.body;
-  await prisma.user.update({
-    where: { id: req.userId },
-    data: {
-      username: username ?? undefined,
-      email: email ?? undefined,
-      avatar: avatar ?? undefined,
-    },
-  });
-  res.json({ message: 'User profile updated successfully' });
+router.put('/', requireAuth, upload.single('avatar'), async (req, res) => {
+  const { username, email, } = req.body;
+  const filename = req.file.filename;
+  await prisma.user.update({
+    where: { id: req.userId },
+    data: {
+      username: username ?? undefined,
+      email: email ?? undefined,
+      avatar: filename ?? undefined,
+    },
+  });
+
+  res.json({ message: 'User profile updated successfully' });
 });
 
 router.patch('/password', requireAuth, async (req, res) => {
-  const { password } = req.body;
-  const hashedPassword = await argon2.hash(password);
-  await prisma.user.update({
-    where: { id: req.userId },
-    data: { password: hashedPassword },
-  });
-  res.json({ message: 'Password updated successfully' });
+  const { password } = req.body;
+  const hashedPassword = await argon2.hash(password);
+
+  await prisma.user.update({
+    where: { id: req.userId },
+    data: { password: hashedPassword },
+  });
+
+  res.json({ message: 'Password updated successfully' });
 });
+
 module.exports = router;
 ```
 **``api/Task.js``**
@@ -742,7 +780,7 @@ We configure the limiter to:
 - Store rate-limit data in Redis
 - Apply default limits to all API endpoints
 
-**`middleware/limit.js`**
+**`middlewares/limit.js`**
 ```js
 const rateLimit = require('express-rate-limit');
 const RedisStore = require('rate-limit-redis').default;
@@ -780,7 +818,7 @@ app.use(limiter);
  
 For example, to set a rate limit of 5 API calls per minute for login endpoint and  100 API calls per minute for task endpoint , we add the following code to our **`limit.js`** middleware file:
 
-**``middlewares/limit.js``
+**``middlewares/limit.js``**
 ```js
  const loginLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
@@ -801,7 +839,7 @@ module.exports = {
 ```
 Now for login EndPoint we apply the  `loginLimiter` middleware
 ```js
-const {loginLimiter} = require('../middleware/limit');
+const {loginLimiter} = require('../middlewares/limit');
 
 
 router.post('/login', loginLimiter, async (req, res) => {
@@ -811,7 +849,7 @@ router.post('/login', loginLimiter, async (req, res) => {
 ```
 And for tasks end point  we apply the `taskLimiter ` middleware
 ```js
-const { taskLimiter } = require('../middleware/limit');
+const { taskLimiter } = require('../middlewares/limit');
 
 
 router.get('/', requireAuth, taskLimiter, async (req, res) => {

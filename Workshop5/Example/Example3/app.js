@@ -2,7 +2,7 @@ const express = require('express');
 const authRoutes = require('./api/Auth');
 const userRoutes= require('./api/User');
 const taskRoutes= require('./api/Task');
-const { limiter} = require('./middleware/limit');
+const { limiter} = require('./middlewares/limit');
 const app = express();
 const port = 3000;
 
