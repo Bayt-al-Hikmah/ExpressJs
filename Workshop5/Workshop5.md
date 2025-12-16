@@ -695,3 +695,133 @@ For every subsequent API request, we need to include this token in the Authoriza
 'Authorization': `Bearer ${localStorage.getItem('token')}` 
 ```
 to the headers of each `fetch` request. This ensures that only authenticated users can access protected endpoints.
+### API Rate Limiting
+As our API gains more users, we need to protect it from abuse, excessive load, and denial-of-service (DoS) attacks. Rate Limiting is the practice of restricting the number of API requests a user (or IP address) can make within a specific time window.
+#### Implementing Rate Limiting
+To protect our Express application from abuse and excessive requests, we implement rate limiting. Rate limiting helps prevent brute-force attacks, reduces server load, and improves overall API reliability.
+
+In Express, the most common and recommended solution is the **`express-rate-limit`** middleware.
+
+We start by installing it using:
+```
+npm install express-rate-limit
+```
+#### Installing Redis
+Redis (Remote Dictionary Server) is a very fast, in-memory data store. It is commonly used for caching, sessions, queues, and rate limiting. Because Redis stores data in memory, it is significantly faster than traditional databases, making it ideal for tracking API requests in real time.
+
+In our Express application, Redis is used with rate limiting middleware (such as `express-rate-limit` with a Redis store) to persist rate-limit data. This allows rate limits to remain consistent even if the server restarts or runs across multiple instances.
+
+We install it as following 
+
+- Ubuntu / Debian:
+```
+sudo apt update
+sudo apt install redis-server
+sudo systemctl enable redis-server
+sudo systemctl start redis-server
+
+```
+- macOS (Homebrew):
+```
+brew install redis
+brew services start redis
+```
+
+- Windows Redis is not officially supported on Windows, but we can use **Redis for Windows** provided by the community [Redis for Windows](https://github.com/tporadowski/redis/releases).
+
+After that we install the redis package
+```
+npm install redis rate-limit-redis
+```
+#### Configuring the Rate Limiter
+After installing Redis, we create a new middleware file called **`limit.js`**.  
+In this file, we configure **`express-rate-limit`** to protect our API from excessive requests.
+
+We configure the limiter to:
+- Use the client’s IP address to track requests
+- Store rate-limit data in Redis
+- Apply default limits to all API endpoints
+
+**`middleware/limit.js`**
+```js
+const rateLimit = require('express-rate-limit');
+const RedisStore = require('rate-limit-redis').default;
+const { createClient } = require('redis');
+
+const redisClient = createClient({
+  url: 'redis://localhost:6379',
+});
+
+redisClient.connect();
+
+const limiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 50,                 // 50 requests per hour
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: new RedisStore({
+    sendCommand: (...args) => redisClient.sendCommand(args),
+  }),
+});
+
+module.exports = limiter;
+```
+With this setup, every endpoint in our application is automatically limited unless we override the limits on a specific route. Redis ensures that these limits are fast, reliable, and persistent even if the server restarts.
+#### Apply the Rate Limit
+Finally we can apply limits globally or to specific API routes.
+**Global Limit:** The default limits above apply to every route unless overridden. we set this in `app.js` file by adding:
+```js
+const {limiter} = require('./middlewares/limiter');
+
+app.use(limiter);
+```
+
+ **Specific Endpoint Limit:** We can create an additional middleware and apply it directly to a specific endpoint.  
+ 
+For example, to set a rate limit of 5 API calls per minute for login endpoint and  100 API calls per minute for task endpoint , we add the following code to our **`limit.js`** middleware file:
+
+**``middlewares/limit.js``
+```js
+ const loginLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 5,             // 5 requests per minute
+  message: { message: 'Too many login attempts, please try again later.' },
+});
+
+const taskLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 100,           // 100 requests per minute
+});
+
+module.exports = {
+    limiter,
+    taskLimiter,
+    loginLimiter
+};
+```
+Now for login EndPoint we apply the  `loginLimiter` middleware
+```js
+const {loginLimiter} = require('../middleware/limit');
+
+
+router.post('/login', loginLimiter, async (req, res) => {
+  // ... login logic ...
+});
+
+```
+And for tasks end point  we apply the `taskLimiter ` middleware
+```js
+const { taskLimiter } = require('../middleware/limit');
+
+
+router.get('/', requireAuth, taskLimiter, async (req, res) => {
+  // ... task retrieval logic ...
+});
+```
+Rate limiting ensures our API remains responsive and stable, providing a layer of security and robustness as our application scales.
+
+#### Warning
+When setting rate limits, the main (global) limit should always have the highest limit.  
+All other endpoints should use smaller, more restrictive limits, especially sensitive routes like authentication.
+
+Global limits cannot be overridden with higher values, only reduced.  If the global limit is too low, no endpoint will be able to exceed it even if we apply a higher limit later.

@@ -1,0 +1,26 @@
+{
+  "name": "example1",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@prisma/client": "^6.19.1",
+    "argon2": "^0.44.0",
+    "dotenv": "^17.2.3",
+    "ejs": "^3.1.10",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.2.1",
+    "iron-session": "^8.0.4",
+    "jsonwebtoken": "^9.0.3",
+    "prisma": "^6.19.1",
+    "rate-limit-redis": "^4.3.1",
+    "redis": "^5.10.0",
+    "sqlite3": "^5.1.7"
+  }
+}
