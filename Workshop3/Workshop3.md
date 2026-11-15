@@ -1,1291 +1,2797 @@
+# Workshop 3: Database Integration and CRUD Operations with PostgreSQL
+
 ## Objectives
 
-- Implement user **registration, login, and logout** functionality using Express `iron-session`.
-- Build a simple wiki app where users can create and view pages.
-- Handle **rich text** input safely using Markdown.
-- Allow users to **upload files** and manage them securely.
-- Explore the evolution of CSS: from component classes to **utility-first frameworks**.
-
-## User Authentication
-
-User authentication is a foundational aspect of web applications, ensuring that only authorized individuals can access certain features or data. In our wiki app, authentication allows us to track who creates content, personalize experiences, and secure sensitive actions like uploading files. We'll use session-based authentication, which is straightforward for server-side apps like those built with Express.js. This method stores user information on the server and sends a session ID to the client via cookies, making it secure against common attacks when configured properly.
-
-### Simulating Our Database
-
-Since we’re not using a database yet, we’ll simulate user storage with a JavaScript object. In a real application, we replace this with a database like MongoDB or PostgreSQL. Simulating a database with in-memory objects is a common practice during development or for small-scale prototypes. It allows us to focus on application logic without the overhead of setting up a full database system. However, keep in mind that this data will be lost when the server restarts, so it's not suitable for production. In a real-world scenario, you'd integrate an ORM like Mongoose for MongoDB to persist data across sessions.
-
-**`app.js`:**
-To create the database we add to app.js the following lines
-```javascript
-app.locals.users = {}; // e.g., { 'username': { password: 'password123', avatar: null } }
-app.locals.pages = {}; // e.g., { 'HomePage': { content: 'Welcome!', author: 'admin' } }
-
-```
-
-This simple object structure mimics key-value storage: users are indexed by username, and pages by their titles. Each user entry holds a password and an optional avatar. Pages store content, author, and later, flags for content type.  
-We access them inside our routes by using `req.app.locals.users` and for pages `req.app.locals.pges`
-
-### The Express `iron-session` Middleware
-
-How does our app remember who’s logged in across requests? Express uses the **`iron-session`** middleware to manage **sessions**, which store encrypted user data directly in a secure cookie on the client’s browser. Unlike traditional session systems that rely on a server-side store like Redis, `iron-session` keeps the data client-side but it’s sealed using strong encryption and signing keys, so the contents cannot be read or tampered with.
-
-We can safely store lightweight information, such as a username or user ID, inside this encrypted cookie and access it on subsequent requests. This allows our app to maintain state between HTTP requests while staying stateless on the server. `iron-session` uses a secret key (defined in our environment variables) to encrypt and sign the session cookie. It’s essential that this key be long and random to ensure security.
-
-**Install required packages**:
-
-```bash
-npm install express iron-session ejs marked express-validator multer dotenv
-```
-
-These packages provide: Express for the web framework, iron-session for sessions, EJS for templating, marked for Markdown parsing, dotenv for accessing environment variables, express-validator for input validation, and multer for file uploads. Always install dependencies at the start to ensure your environment is ready.
-
-### Creating the Routes
-Create a `routes` folder with an `auth.js` file for authentication routes.
-
-**`routes/auth.js`:**
-
-```javascript
-const express = require('express');
-const { body, validationResult } = require('express-validator');
-const router = express.Router();
-
-router.get('/register', async(req, res) => {
-    
-    const messages = req.session.messages || [];
-    const username = req.session.user?.username || null
-    const errors = req.session.errors || []
-    req.session.messages = [];
-    req.session.errors = [];
-    await req.session.save();
-    res.render('register', { errors, messages , username});
-});
-
-router.post('/register', [
-    body('username').notEmpty().withMessage('Username is required').trim().isLength({ min: 3, max: 25 }),
-    body('password').notEmpty().withMessage('Password is required').isLength({ min: 6 })
-], async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        req.session.errors = errors.errors;
-        await req.session.save();
-        return res.redirect('/register');
-    }
-
-    const { username, password } = req.body;
-    if (req.app.locals.users[username]) {
-        req.session.messages = [{ category: 'danger', message: 'Username already exists!' }];
-        await req.session.save();
-        return res.redirect('/register');
-    }
-
-    req.app.locals.users[username] = { password, avatar: null };
-    req.session.messages = [{ category: 'success', message: 'Registration successful! Please log in.' }];
-    await req.session.save();
-    res.redirect('/login');
-});
-
-router.get('/login', async (req, res) => {
-      const messages = req.session.messages || [];
-    const username = req.session.user?.username || null
-    const errors = req.session.errors || []
-    req.session.messages = [];
-    req.session.errors = [];
-    await req.session.save();
-      res.render('login', { errors, messages ,username});
-});
-
-router.post('/login', [
-    body('username').notEmpty().withMessage('Username is required'),
-    body('password').notEmpty().withMessage('Password is required')
-], async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        req.session.errors = errors.errors;
-        await req.session.save();
-        return res.redirect('/login');
-    }
-
-    const { username, password } = req.body;
-    const user = req.app.locals.users[username];
-    if (user && user.password === password) {
-        req.session.user = { username };
-        req.session.messages = [{ category: 'success', message: 'Login successful!' }];
-        await req.session.save();
-        res.redirect('/');
-    } else {
-        req.session.messages = [{ category: 'danger', message: 'Invalid username or password.' }];
-        await req.session.save();
-        res.redirect('/login');
-    }
-});
-
-router.get('/logout',  async  (req, res) => {
-    await req.session.destroy();
-    res.redirect('/login');
-});
-
-module.exports = router;
-```
-**GET /register**
-
-When a user visits `/register`, the server renders the registration page using the EJS template engine.  
-It also passes any **flash messages** (like “Username already exists” or “Registration successful”) stored in the session to the template.  
-After rendering, these messages are cleared to avoid displaying them again on subsequent requests.  
-This provides users with immediate feedback about their registration attempts or validation errors.
-
-
- **POST /register**
-
-When the registration form is submitted, the server receives the `username` and `password` from the request body.
-
-1. **Validation:**  
-    The input fields are first validated using `express-validator`.
-    
-    - The username must be between 3 and 25 characters.
-        
-    - The password must be at least 6 characters long.  
-        If any validation errors occur, they are converted into flash messages and displayed on the registration page.
-        
-2. **Duplicate Check:**  
-    The server checks if the username already exists in the in-memory `users` store.
-    
-    - If it does, a danger message (“Username already exists!”) is stored in the session, and the user is redirected back to `/register`.
-        
-3. **Secure Password Storage:**  
-    If the username is new, it will create the username with the password and save them.  
-    
-4. **User Creation:**  
-    The new user is stored in the `req.app.locals.users` object with the  password and a placeholder for the avatar field.
-    
-5. **Feedback and Redirect:**  
-    A success flash message (“Registration successful! Please log in.”) is saved, and the user is redirected to the `/login` page.
-    
-
-**GET /login**
-
-When a user visits `/login`, the server renders the login page template.  
-As with registration, it retrieves and displays any flash messages from the session.  
-These might include errors like “Invalid username or password” or notices like “Registration successful! Please log in.”  
-After rendering, messages are cleared from the session to prevent repetition.
-
-
-**POST /login**
-
-When the login form is submitted:
-
-1. **Validation:**  
-    The server ensures both `username` and `password` fields are filled.  
-    If any are missing, validation errors are stored as messages, and the user is redirected back to `/login`.
-    
-2. **User Lookup:**  
-    The server searches the `app.locals.users` object for a user matching the provided username.
-    
-3. **Password Verification:**  
-    If the user exists, it verifies the submitted password against the stored password.
-    
-4. **Successful Login:**  
-    If verification succeeds, a new session is created and the user’s data (only the username) is stored inside `req.session.user`.  
-    A success message (“Login successful!”) is added, and the user is redirected to the home page (`/`).
-    
-5. **Failed Login:**  
-    If verification fails, a danger message (“Invalid username or password.”) is stored, and the user is redirected back to `/login`.
-    
-
-**GET /logout**
-
-When the user visits `/logout`:
-
-1. The current session is **destroyed** using `await req.session.destroy()`, which removes the user’s login state from the encrypted cookie.
-    
-2. The user is redirected to `/login`, where they can see a message (if desired) confirming they’ve logged out.
-    
-
-This ensures the session data is fully cleared, protecting against unauthorized access if the same browser is reused.
-
-
-
-### Create Templates
-**`views/partials/_navbar.ejs`:**
-
-```html
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>MyApp</title>
-    <link rel="stylesheet" href="/style.css">
-</head>
-<body>
-    <header class="site-header">
-        <div class="container header-inner">
-            <a class="brand" href="/">MyApp</a>
-            <nav class="main-nav">
-                <% if (username) { %>
-                    <span class="greet">Hello, <%= username %></span>
-                    <a href="/logout" class="nav-link">Logout</a>
-                <% } else { %>
-                    <a href="/login" class="nav-link">Login</a>
-                    <a href="/register" class="nav-link">Register</a>
-                <% } %>
-            </nav>
-        </div>
-    </header>
-
-    <main class="container">
-        <% if (messages && messages.length > 0) { %>
-            <div class="flash-wrapper">
-                <% messages.forEach(message => { %>
-                    <div class="flash flash-<%= message.category.toLowerCase() %>">
-                        <span class="flash-message"><%= message.message %></span>
-                        <button class="flash-dismiss" onclick="this.parentElement.style.display='none'">×</button>
-                    </div>
-                <% }); %>
-            </div>
-        <% } %>
-
-        <section class="content">
-
-
-```
-**`views/partials/_footer.ejs`:**
-```
-        </section>
-    </main>
-
-    <footer class="site-footer">
-        <div class="container">
-            <small>&copy; 2025 MyApp</small>
-        </div>
-    </footer>
-</body>
-</html>
-```
-EJS templates allow embedding JavaScript in HTML for dynamic content. This layout serves as a base template, including a header with conditional navigation based on login status, a main content area for flash messages (temporary notifications) and the page body, and a footer. The `<%- body %>` tag injects child template content.
-
-**`views/register.ejs`:**
-
-```html
-<%- include('partials/_navbar') %>
-<h1 class="page-title">Create an account</h1>
-
-<form method="POST" class="form-card">
-    <label for="username">Username</label>
-    <input id="username" name="username" type="text" required>
-    <% errors.forEach(error => { %>
-        <% if (error.path === 'username') { %>
-            <span style="color:red;"><%= error.msg %></span><br>
-        <% } %>
-    <% }) %>
-
-    <label for="password">Password</label>
-    <input id="password" name="password" type="password" required>
-    <% errors.forEach(error => { %>
-        <% if (error.path === 'password') { %>
-            <span style="color:red;"><%= error.msg %></span><br>
-        <% } %>
-    <% }) %>
-
-    <div class="form-actions">
-        <button type="submit" class="btn btn-primary">Register</button>
-        <a href="/login" class="btn btn-link">Already have an account?</a>
-    </div>
-</form>
-<%- include('partials/_footer') %>
-```
-
-This template extends the layout and provides a registration form. It displays field-specific errors inline, improving user experience by highlighting issues directly. The 'required' attribute adds client-side validation, but server-side checks are essential for security.
-
-**`views/login.ejs`:**
-
-```html
-<%- include('partials/_navbar') %>
-<h1 class="page-title">Log in</h1>
-
-<form method="POST" class="form-card">
-    <label for="username">Username</label>
-    <input id="username" name="username" type="text" required>
-    <% errors.forEach(error => { %>
-        <% if (error.path === 'username') { %>
-            <span style="color:red;"><%= error.msg %></span><br>
-        <% } %>
-    <% }) %>
-
-    <label for="password">Password</label>
-    <input id="password" name="password" type="password" required>
-    <% errors.forEach(error => { %>
-        <% if (error.path === 'password') { %>
-            <span style="color:red;"><%= error.msg %></span><br>
-        <% } %>
-    <% }) %>
-
-    <div class="form-actions">
-        <button type="submit" class="btn btn-success">Login</button>
-        <a href="/register" class="btn btn-link">Create account</a>
-    </div>
-</form>
-<%- include('partials/_footer') %>
-```
-
-Similar to registration, this login form uses EJS to show errors and includes a link to register, guiding new users seamlessly.  
-
-And finally we create the ``index.ejs`` template.  
-**`views/index.ejs`:**
-
-```html
-<%- include('partials/_navbar') %>
-<h1 class="page-title">Welcome to MyApp</h1>
-<p>Create and view wiki pages!</p>
-<%- include('partials/_footer') %>
-```
-### Adding Styles
-For this lecture, we will use the style file from the ``materials`` folder. We create ``public/css`` Folder and we place The ``style.css`` file inside it. 
-
-### Configure The app.js files
-
-**`app.js`:**
-
-```javascript
-require('dotenv').config();
-const express = require('express');
-const { getIronSession } = require('iron-session');
-const authRoutes = require('./routes/auth');
-
-const app = express();
-const port = 3000;
-
-app.locals.users = {}; // e.g., { 'username': { password: 'password123', avatar: null } }
-app.locals.pages = {}; // e.g., { 'HomePage': { content: 'Welcome!', author: 'admin' } }
-
-app.set('view engine', 'ejs');
-app.use(express.static('public'));
-app.use(express.urlencoded({ extended: true }));
-
-app.use(async (req, res, next) => {
-   const session = await getIronSession(req, res, {
-    cookieName: 'session',
-    password: process.env.SESSION_SECRET || 'a-very-long-random-secret-key-change-this!',
-    cookieOptions: {
-      secure: process.env.NODE_ENV === 'production', // only over HTTPS in production
-      httpOnly: true,
-      sameSite: 'lax',
-      maxAge: 15 * 60,
-    },
-  })
-  req.session = session; 
-  next();
-});
-
-
-app.use(authRoutes);
-
-app.get('/', (req, res) => {
-  const username = req.session.user?.username || null;
-  const messages = req.session.messages || [];
-
-  res.render('index', { username, messages });
-
-  req.session.messages = [];
-});
-
-app.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
-});
-
-```
-There are many security risks when storing and managing sessions in web applications. Poor session handling can expose users to attacks like XSS (Cross-Site Scripting), CSRF (Cross-Site Request Forgery), session hijacking, and session fixation. For example, if session tokens are stored in localStorage or accessible JavaScript variables, an attacker could steal them through malicious scripts or browser extensions. Similarly, without proper cookie configuration, attackers could trick the browser into sending valid session cookies from another site.
-
-To prevent these risks, we configure iron-session with strict cookie and encryption options. The session data is encrypted and signed using a secret key, so even if someone gains access to the cookie, they can’t read or modify it. All sensitive data stays protected on the client side in an unreadable, tamper-proof form.  
-
-- **`httpOnly: true`** → protects against XSS by preventing scripts from reading the cookie.
-- **`sameSite: 'lax'`** → helps prevent CSRF by limiting when cookies are sent in cross-site requests.
-- **`secure: true`** → ensures cookies are only sent over HTTPS, protecting them from being intercepted.
-- **`maxAge`** → keeps sessions short-lived, reducing the risk if a token is ever compromised.
-- **`password`** → encrypts and signs session data so it cannot be tampered with or decrypted without the secret key.
-
-This main file sets up the Express app, configures the view engine (EJS for dynamic HTML), serves static files from 'public', initializes sessions, and parses URL-encoded form data. Routes are mounted, and the root route renders an index page with session-based username and messages. The server listens on port 3000, a common development port.
-### Environment Variables
-Environment variables are used to store sensitive configuration data outside your source code, keeping your application both secure and flexible.
-
-In this project, the session’s secret key is stored in an environment variable named SESSION_SECRET. It should be at least 32 characters long to ensure security.
-
-We also use another environment variable, NODE_ENV, to specify the current environment whether the server is running in development or production mode.  
-We create a file called .env and define our variables inside it:
-**``.env``**
-```
-SESSION_SECRET=your-very-secure-random-key
-NODE_ENV=development
-```
-The line ``require('dotenv').config();`` loads these environment variables from the .env file and makes them accessible in our application through ``process.env``.
-
-## Rich Text and Pages
-
-A wiki needs to support **rich text** for formatted content like headings, bold text, and lists. Instead of allowing raw HTML (which is insecure), we’ll use **Markdown** and convert it to HTML on the server using the `marked` library. Rich text enhances user-generated content by allowing formatting without compromising security. Raw HTML inputs can lead to XSS (Cross-Site Scripting) attacks, where malicious scripts are injected. Markdown is a lightweight markup language that's easy to learn and safe when parsed correctly it converts plain text to HTML while sanitizing potential threats.
-
-**Install `marked`:**
-
-```bash
-npm install marked
-```
-
-The `marked` library is a fast, reliable Markdown parser that outputs HTML. It's configurable for custom rendering if needed.
-
-**`routes/wiki.js`:**
-
-```javascript
-const express = require('express');
-const { body, validationResult } = require('express-validator');
-
-const router = express.Router();
-
-const requireLogin = async (req, res, next) => {
-    const username = req.session.user?.username || null;
-    if (!username) {
-        req.session.messages = [{ category: 'danger', message: 'You must be logged in to access this page.' }];
-        await req.session.save();
-        return res.redirect('/login');
-    }
-    next();
-};
-
-router.get('/wiki/:pageName', async (req, res) => {
-    const { marked } = await import('marked');
-    const pageName = req.params.pageName;
-    const page = req.app.locals.pages[pageName];
-    const username = req.session.user?.username || null;
-    if (!page) {
-        return res.status(404).render('404', { username: username, messages: [] });
-    }
-    page.htmlContent = page.isMarkdown ? marked(page.content) : page.content;
-    res.render('wiki_page', { page, pageName, username: username, messages: [] });
-});
-
-router.get('/create', requireLogin, async (req, res) => {
-    const messages = req.session.messages || [];
-    const username = req.session.user?.username || null
-    const errors = req.session.errors || []
-    req.session.messages = [];
-    req.session.errors = [];
-    await req.session.save();
-    res.render('create_page', { username, errors, messages});
-});
-
-router.post('/create', requireLogin, [
-    body('title').notEmpty().withMessage('Page title is required').trim(),
-    body('content').notEmpty().withMessage('Content is required')
-], async (req, res) => {
-    const username = req.session.user?.username || null;
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        req.session.errors = errors.errors;
-        await req.session.save();
-        return res.redirect('/create');
-    }
-    const { title, content } = req.body;
-    req.app.locals.pages[title] = { content, author: username, isMarkdown: true };
-    res.redirect(`/wiki/${title}`);
-});
-
-module.exports = router;
-```
-We can notice that for marked, we import it using const { marked } = await import('marked');. This is because it uses the ES Module (ESM) system instead of CommonJS (CJS). In ESM, we use the import keyword to load modules, while in CJS we use require(). The await import() form allows dynamic importing, meaning the module is loaded only when needed rather than at the start of the program. This makes the code more flexible and compatible with modern JavaScript standards.  
-
-**GET /wiki/:pageName**
-
-When a user visits `/wiki/:pageName`, the server:
-
--  Extracts the `pageName` from the URL parameters.
-    
--  Looks up the page in `req.app.locals.pages`.
-    
--  If the page doesn’t exist, it responds with a 404 page.
-    
--  If the page exists and is marked as Markdown (`page.isMarkdown`), `marked(page.content)` converts the Markdown text into HTML. If not, it renders the content as-is.
-    
--  Finally, the server renders the `wiki_page` template, passing the HTML content, page name, username from the session, and any messages.
-    
-
-
-**GET /create**
-
-When a logged-in user visits `/create`:
-
--  The `requireLogin` middleware ensures that only authenticated users can access the page.
-    
-    - If the user is not logged in, a flash message is stored in the session, and the user is redirected to `/login`.
-        
--  The session messages are cleared before rendering.
-    
--  The server renders the `create_page` template, passing the username, any validation errors, and messages.
-    
-
-**POST /create**
-
-When a logged-in user submits the form to create a new wiki page:
-- **Validation:**
-    
-    - `title` and `content` are required.
-        
-    - `express-validator` checks these fields and collects errors if they are missing.
-        
-    - Validation errors are converted into session flash messages and the user is redirected back to `/create` if any exist.
-        
-- **Page Creation:**
-    
-    - If validation passes, a new entry is added to the `pages` object.
-        
-    - The page stores:
-        
-        - `content` (user-submitted text),
-            
-        - `author` (current username from the session),
-            
-        - `isMarkdown` (true, indicating the content should be parsed by `marked`).
-            
-- **Redirect to the Page:**
-    
-    - The user is redirected to `/wiki/:title` where the new page is displayed with the Markdown converted to HTML.
-
-#### Now We create the templates
-**`views/wiki_page.ejs`:**
-
-```html
-<%- include('partials/_navbar') %>
-<h1><%= pageName %></h1>
-<p><em>By: <%= page.author %></em></p>
-<hr>
-<div>
-    <%- page.htmlContent %>
-</div>
-<%- include('partials/_footer') %>
-```
-
-This template displays the page title, author, and rendered HTML content. The `<%- %>` tag is used for unescaped output, trusting the sanitized HTML from `marked`.
-
-**`views/create_page.ejs`:**
-
-```html
-<%- include('partials/_navbar') %>
-<h1 class="page-title">Create a Wiki Page</h1>
-
-<form method="POST" class="form-card">
-    <label for="title">Page Title</label>
-    <input id="title" name="title" type="text" required>
-    <% errors.forEach(error => { %>
-        <% if (error.path === 'title') { %>
-            <span style="color:red;"><%= error.msg %></span><br>
-        <% } %>
-    <% }) %>
-
-    <label for="content">Content (Markdown supported)</label>
-    <textarea id="content" name="content" rows="12" placeholder="# Heading
-Write your text here...
-- bullet list
-**bold text**
-*italic text*"></textarea>
-    <% errors.forEach(error => { %>
-        <% if (error.path === 'content') { %>
-            <span style="color:red;"><%= error.msg %></span><br>
-        <% } %>
-    <% }) %>
-
-    <div class="form-actions">
-        <button type="submit" class="btn btn-primary">Create Page</button>
-    </div>
-</form>
-
-
-<%- include('partials/_footer') %>
-```
-
-The creation form includes a textarea with a placeholder demonstrating Markdown syntax. A quick reference card educates users, making the app more user-friendly for beginners.
-#### Updating app.js
-Now we update our app.js so we include the new routes
-```
-require('dotenv').config();
-const express = require('express');
-const { getIronSession } = require('iron-session');
-const authRoutes = require('./routes/auth');
-const wiki = require('./routes/wiki');
-
-const app = express();
-const port = 3000;
-
-app.locals.users = {}; // e.g., { 'username': { password: 'password123', avatar: null } }
-app.locals.pages = {}; // e.g., { 'HomePage': { content: 'Welcome!', author: 'admin' } }
-
-app.set('view engine', 'ejs');
-app.use(express.static('public'));
-app.use(express.urlencoded({ extended: true }));
-
-app.use(async (req, res, next) => {
-   const session = await getIronSession(req, res, {
-    cookieName: 'session',
-    password: process.env.SESSION_SECRET || 'a-very-long-random-secret-key-change-this!',
-    cookieOptions: {
-      secure: process.env.NODE_ENV === 'production', // only over HTTPS in production
-      httpOnly: true,
-      sameSite: 'lax',
-      maxAge: 15 * 60,
-    },
-  })
-  req.session = session; 
-  next();
-});
-
-
-app.use(authRoutes);
-app.use(wiki);
-
-app.get('/', (req, res) => {
-  const username = req.session.user?.username || null;
-  const messages = req.session.messages || [];
-
-  res.render('index', { username, messages });
-
-  req.session.messages = [];
-});
-
-app.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
-});
-
-```
-
-### Using CKEditor in Express
-
-Markdown is great, but some users prefer a visual editor. **CKEditor** provides a WYSIWYG (What You See Is What You Get) interface, outputting HTML directly. We’ll use the CKEditor 5 editor. WYSIWYG editors like CKEditor allow non-technical users to format text visually, similar to word processors. It generates HTML under the hood, but we must sanitize outputs to prevent XSS. CKEditor includes built-in security features, but always validate on the server.  
-First we install it using 
-**Install CKEditor**:
-We first download the copy `ckeditor.js` from `materials` folder and store it inside ``public/script`` folder.  
-Now, let’s create a reusable layout file for the CKEditor setup.  
-This will make it easy to include the editor wherever it’s needed for example, on our “create_page.ejs” page.
-**`views/partials/_ckeditor.ejs`**
-```
-<script src="script/ckeditor.js"> </script>
- <script >
- 
-    let editorInstance;
-    ClassicEditor.create(document.querySelector('#content'))
-      .then(editor => {
-        editorInstance = editor;
-      })
-      .catch(console.error);
-
-    document.querySelector('#editorForm').addEventListener('submit', e => {
-      document.querySelector('#content').value = editorInstance.getData();
-    });
-  </script>
-```
-This script initializes **CKEditor 5** on a text area and ensures its HTML content is sent to the server when the form is submitted. The line `<script src="script/ckeditor.js"> </script>` loads the CKEditor 5 build from your `public/script` folder. Then, `ClassicEditor.create(document.querySelector('#editor'))` replaces the textarea with a full-featured rich text editor. When the editor is ready, its instance is stored in `editorInstance`. Before submitting the form, the script takes the HTML content generated by CKEditor using `editorInstance.getData()` and assigns it to the hidden field named `content`. This way, the form sends clean, ready-to-use HTML to your Express backend without needing extra parsing or conversion.  
-
-Now we can include the CKEditor partial in our form view. we just include it using  `<%- include('partials/_ckeditor') %>`
-**`views/create_page.ejs`: (updated)**
-
-```html
-<%- include('partials/_navbar') %>
-<h1 class="page-title">Create a Wiki Page (CKEditor)</h1>
-
-<form id="editorForm" method="POST" class="form-card">
-    <label for="title">Page Title</label>
-    <input id="title" name="title" type="text" required>
-    <% errors.forEach(error => { %>
-        <% if (error.path === 'title') { %>
-            <span style="color:red;"><%= error.msg %></span><br>
-        <% } %>
-    <% }) %>
-
-    <label for="content">Content</label>
-    <textarea id="content" name="content"></textarea>
-    <% errors.forEach(error => { %>
-        <% if (error.path === 'content') { %>
-            <span style="color:red;"><%= error.msg %></span><br>
-        <% } %>
-    <% }) %>
-
-    <div class="form-actions">
-        <button type="submit" class="btn btn-primary">Create Page</button>
-    </div>
-</form>
-
-<%- include('partials/_ckeditor') %>
-
-<%- include('partials/_footer') %>
-```
-
-This template replaces the textarea with CKEditor via JavaScript, transforming it into a rich editor.
-Finally we fix the wiki.js route  
-**`routes/wiki.js`:**
-
-```javascript
-const express = require('express');
-const { body, validationResult } = require('express-validator');
-
-const router = express.Router();
-
-const requireLogin = async (req, res, next) => {
-    const username = req.session.user?.username || null;
-    if (!username) {
-        req.session.messages = [{ category: 'danger', message: 'You must be logged in to access this page.' }];
-        await req.session.save();
-        return res.redirect('/login');
-    }
-    next();
-};
-
-router.get('/wiki/:pageName', (req, res) => {
-    const pageName = req.params.pageName;
-    const page = req.app.locals.pages[pageName];
-    const username = req.session.user?.username || null;
-    if (!page) {
-        return res.status(404).render('404', { username: username, messages: [] });
-    }
-    page.htmlContent = page.content;
-    res.render('wiki_page', { page, pageName, username: username, messages: [] });
-});
-
-router.get('/create', requireLogin, async (req, res) => {
-    const messages = req.session.messages || [];
-    const username = req.session.user?.username || null
-    const errors = req.session.errors || []
-    req.session.messages = [];
-    req.session.errors = [];
-    await req.session.save();
-    res.render('create_page', { username, errors, messages});
-});
-
-router.post('/create', requireLogin, [
-    body('title').notEmpty().withMessage('Page title is required').trim(),
-    body('content').notEmpty().withMessage('Content is required')
-], async (req, res) => {
-    const username = req.session.user?.username || null;
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        req.session.errors = errors.errors;
-        await req.session.save();
-        return res.redirect('/create');
-    }
-    const { title, content } = req.body;
-    req.app.locals.pages[title] = { content, author: username};
-    res.redirect(`/wiki/${title}`);
-});
-
-module.exports = router;
-```
-Since CKEditor 5 outputs fully formatted HTML, there’s no need to parse or convert the content (e.g., using marked). Our ``app.js`` remains the same and doesn’t require any changes.
-## File Uploads
-
-Let’s allow users to upload profile pictures (avatars) using the `multer` middleware for secure file handling. File uploads are essential for features like avatars or attachments, but they introduce risks like server overload or malicious files. Multer handles multipart/form-data, parses files, and allows custom storage and filtering.
-
-**Install multer**:
-
-```bash
-npm install multer
-```
-Now we create the route that serve uploading files
-**`routes/profile.js`:**
-
-```javascript
-const express = require('express');
-const multer = require('multer');
-const path = require('path');
-const router = express.Router();
-
-const requireLogin = (req, res, next) => {
-    const username = req.session.user?.username || null;
-    if (!username) {
-        req.session.messages = [{ category: 'danger', message: 'You must be logged in to access this page.' }];
-        return res.redirect('/login');
-    }
-    next();
-};
-
-const upload = multer({
-    dest: 'public/avatars/',
-    fileFilter: (req, file, cb) => {
-        const allowedExtensions = ['.png', '.jpg', '.jpeg', '.gif'];
-        const ext = path.extname(file.originalname).toLowerCase();
-        if (allowedExtensions.includes(ext)) {
-            cb(null, true);
-        } else {
-            cb(new Error('Only images are allowed'));
-        }
-    }
-});
-
-router.get('/profile', requireLogin, async (req, res) => {
-    const username = req.session.user?.username || null;
-    const user = req.app.locals.users[username];
-    const messages = req.session.messages || []
-    req.session.messages = [];
-    await req.session.save()
-    res.render('profile', { user, username, messages });
-});
-
-router.post('/profile', requireLogin, upload.single('avatar'), async (req, res) => {
-    const username = req.session.user?.username || null;
-    if (!req.file) {
-        req.session.messages = [{ category: 'danger', message: 'No file selected or invalid file type.' }];
-        await req.session.save();
-        return res.redirect('/profile');
-    }
-    const filename = req.file.filename;
-    req.app.locals.users[username].avatar = filename;
-    req.session.messages = [{ category: 'success', message: 'Avatar updated!' }];
-    await req.session.save();
-    res.redirect('/profile');
-});
-
-module.exports = router;
-```
-
-
- **GET /profile**
-
-When a user visits `/profile`, the server first ensures that the user is logged in before granting access to their profile page.
-
-1. **Access Control (Middleware):**  
-    The `requireLogin` middleware checks if `req.session.user?.username` exists.
-    
-    - If **no active session** is found (meaning the user isn’t logged in), a **danger message** (`"You must be logged in to access this page."`) is stored in the session.
-        
-    - The user is then redirected to the `/login` page.
-        
-2. **Profile Rendering:**  
-    If the user is logged in, the server retrieves the user’s data from the in-memory `users` object using their session username (`users[req.session.username]`).
-    
-3. **Flash Messages:**  
-    Any messages stored in the session (like success or error notifications) are passed to the template and displayed on the profile page.  
-    After rendering, the message list is cleared to prevent repetition.
-    
-4. **Response:**  
-    Finally, the profile page (`profile.ejs`) is rendered with the following data:
-    
-    - The `user` object (containing info like avatar filename)
-        
-    - The logged-in `username`
-        
-    - Any temporary `messages`
-        
-
-This ensures that only authenticated users can access their personal profile page and view any feedback messages.
-
-
-**POST /profile**
-
-When the user submits the form to update their avatar, the server processes the uploaded image and updates the user’s profile.
-
-- **Access Control (Middleware):**  
-    Just like the GET route, the `requireLogin` middleware ensures that only logged-in users can upload avatars.
-    
-- **File Upload Handling (Multer Configuration):**  
-    The route uses **Multer**, a Node.js middleware for handling file uploads.  
-    It is configured as follows:
-    
-    - **Destination:**  
-        Files are temporarily stored in the `public/avatars/` directory.  
-        This allows avatars to be publicly accessible through static file serving.
-        
-    - **File Filter:**  
-        A custom file filter checks the uploaded file’s extension using `path.extname()`.  
-        Only image files with extensions `.png`, `.jpg`, `.jpeg`, or `.gif` are accepted.  
-        If another type of file is uploaded (e.g., `.exe`, `.pdf`), Multer rejects it and triggers an error: ``Only images are allowed``
-        
-    This configuration ensures the server only accepts valid image formats and prevents uploading potentially harmful files.
-    
-- **File Upload Execution:**  
-    `upload.single('avatar')` processes a **single file** from the form field named `avatar`.  
-    The uploaded file’s metadata (e.g., filename, destination, size) becomes available in `req.file`.
-    
-- **Validation:**  
-    After the upload:
-    
-    - If no file was uploaded or the file type was invalid, a **danger message** (`"No file selected or invalid file type."`) is stored, and the user is redirected back to `/profile`.
-        
-- **Profile Update:**  
-    If the upload is successful, the filename (`req.file.filename`) is saved to the logged-in user’s record in the `users` object:
-    
-    `users[username].avatar = filename;`
-    
-- **Feedback and Redirect:**  
-    A **success message** (“Avatar updated!”) is stored in the session, and the user is redirected back to `/profile`, where the new avatar will be displayed.
-
-**`views/profile.ejs`:**
-
-```html
-<%- include('partials/_navbar') %>
-<div class="container">
-    <h1>Welcome, <%= username %></h1>
-
-    <div class="avatar-section">
-        <% if (user.avatar) { %>
-            <img src="/avatars/<%= user.avatar %>" alt="User Avatar" class="avatar">
-        <% } else { %>
-            <p>No avatar uploaded yet.</p>
-        <% } %>
-    </div>
-
-    <form action="/profile" method="POST" enctype="multipart/form-data">
-        <label for="avatar">Upload new avatar:</label>
-        <input type="file" id="avatar" name="avatar" accept="image/*" required>
-        <button type="submit" class="btn btn-primary">Upload</button>
-    </form>
-</div>
-<%- include('partials/_footer') %>
-```
-
-The form uses `enctype="multipart/form-data"` to support file uploads. Conditional rendering shows the avatar if available. The `enctype="multipart/form-data"` attribute is crucial for file uploads. `multer` sanitizes and saves files securely, and the `fileFilter` ensures only images are accepted.  
-
-Now we edit or ``app.js`` to include the new route.  
-**``app.js``**
-```
-require('dotenv').config();
-const express = require('express');
-const { getIronSession } = require('iron-session');
-const authRoutes = require('./routes/auth');
-const wiki = require('./routes/wiki');
-const profile = require('./routes/profile');
-
-
-const app = express();
-const port = 3000;
-
-app.locals.users = {}; // e.g., { 'username': { password: 'password123', avatar: null } }
-app.locals.pages = {}; // e.g., { 'HomePage': { content: 'Welcome!', author: 'admin' } }
-
-app.set('view engine', 'ejs');
-app.use(express.static('public'));
-app.use(express.urlencoded({ extended: true }));
-
-app.use(async (req, res, next) => {
-   const session = await getIronSession(req, res, {
-    cookieName: 'session',
-    password: process.env.SESSION_SECRET || 'a-very-long-random-secret-key-change-this!',
-    cookieOptions: {
-      secure: process.env.NODE_ENV === 'production', // only over HTTPS in production
-      httpOnly: true,
-      sameSite: 'lax',
-      maxAge: 15 * 60,
-    },
-  })
-  req.session = session; 
-  next();
-});
-
-
-app.use(authRoutes);
-app.use(wiki);
-app.use(profile);
-app.get('/', (req, res) => {
-  const username = req.session.user?.username || null;
-  const messages = req.session.messages || [];
-
-  res.render('index', { username, messages });
-
-  req.session.messages = [];
-});
-
-app.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
-});
-```
-### Creating the Mildware folder
-We noticed that the requireLogin middleware is declared in both ``wiki.js`` and ``profile.js``, which means we’re repeating ourselves. To follow the DRY (Don’t Repeat Yourself) principle, we can refactor this by creating a dedicated middlewares folder.  
-Inside this folder, we’ll add a new file (for example, ``logincheck.js``) and move the requireLogin function there. Then, we can simply import it wherever it’s needed, such as in ``wiki.js`` and ``profile.js``.  
-**``middlewares/loginCheck.js``**
-
-```javascript
-const requireLogin = async (req, res, next) => {
-    const username = req.session.user?.username || null;
-    if (!username) {
-        req.session.messages = [
-            { category: 'danger', message: 'You must be logged in to access this page.' }
-        ];
-        await req.session.save();
-        return res.redirect('/login');
-    }
-    next();
-};
-
-module.exports = requireLogin;
-```
-We can also move the `multer` configuration into the `middleware` folder to keep our codebase cleaner and more organized.    
-To do this, we’ll create a new file named **`middleware/upload.js`** that will contain all the upload-related logic.
-
-**`middlewares/upload.js`**
-```
-const multer = require('multer');
-const path = require('path');
-
-// Configure storage and file filtering
-const upload = multer({
-    dest: 'public/avatars/', // You can make this dynamic if needed
-    fileFilter: (req, file, cb) => {
-        const allowedExtensions = ['.png', '.jpg', '.jpeg', '.gif'];
-        const ext = path.extname(file.originalname).toLowerCase();
-
-        if (allowedExtensions.includes(ext)) {
-            cb(null, true);
-        } else {
-            cb(new Error('Only images are allowed'));
-        }
-    }
-});
-
-module.exports = upload;
-
-```
-Now, we update the ``wiki.js`` and ``profile.js`` files we remove the duplicate ``requireLogin`` and ``multer`` setup code from both files and replace them with imports of the middleware functions we created earlier.  
-This makes our routes easier to read, reduces repetition, and ensures consistent behavior across the application.  
-**`routes/wiki.js`:**
-```javascript
-const express = require('express');
-const { body, validationResult } = require('express-validator');
-const requireLogin = require('../middlewares/loginCheck.js');
-
-const router = express.Router();
-
-router.get('/wiki/:pageName', (req, res) => {
-    const pageName = req.params.pageName;
-    const page = req.app.locals.pages[pageName];
-    const username = req.session.user?.username || null;
-    if (!page) {
-        return res.status(404).render('404', { username: username, messages: [] });
-    }
-    page.htmlContent = page.content;
-    res.render('wiki_page', { page, pageName, username: username, messages: [] });
-});
-
-router.get('/create', requireLogin, async (req, res) => {
-    const messages = req.session.messages || [];
-    const username = req.session.user?.username || null
-    const errors = req.session.errors || []
-    req.session.messages = [];
-    req.session.errors = [];
-    await req.session.save();
-    res.render('create_page', { username, errors, messages});
-});
-
-router.post('/create', requireLogin, [
-    body('title').notEmpty().withMessage('Page title is required').trim(),
-    body('content').notEmpty().withMessage('Content is required')
-], async (req, res) => {
-    const username = req.session.user?.username || null;
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        req.session.errors = errors.errors;
-        await req.session.save();
-        return res.redirect('/create');
-    }
-    const { title, content } = req.body;
-    req.app.locals.pages[title] = { content, author: username};
-    res.redirect(`/wiki/${title}`);
-});
-module.exports = router;
-```
-**`routes/profile.js`:**
-```javascript
-const express = require('express');
-const requireLogin = require('../middlewares/loginCheck.js');
-const upload = require('../middlewares/upload.js');
-
-const router = express.Router();
-
-router.get('/profile', requireLogin, async (req, res) => {
-    const username = req.session.user?.username || null;
-    const user = req.app.locals.users[username];
-    const messages = req.session.messages || []
-    req.session.messages = [];
-    await req.session.save()
-    res.render('profile', { user, username, messages });
-});
-
-router.post('/profile', requireLogin, upload.single('avatar'), async (req, res) => {
-    const username = req.session.user?.username || null;
-    if (!req.file) {
-        req.session.messages = [{ category: 'danger', message: 'No file selected or invalid file type.' }];
-        await req.session.save();
-        return res.redirect('/profile');
-    }
-    const filename = req.file.filename;
-    req.app.locals.users[username].avatar = filename;
-    req.session.messages = [{ category: 'success', message: 'Avatar updated!' }];
-    await req.session.save();
-    res.redirect('/profile');
-});
-
-module.exports = router;
-```
-### Handling Unknown Routes
-Our app works great so far, but there’s still a small problem what happens if a user tries to visit a random, non-existing route like `/random-route`?  
-By default, **Express** will return the following HTML page as a response:
-
-```
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>Error</title>
-</head>
-<body>
-<pre>Cannot GET /roundom-route</pre>
-</body>
-</html>
-```
-
-This is good  the app doesn’t crash and clearly indicates that the route doesn’t exist.  
-However, in a web application, we usually want to show a more user-friendly 404 page instead of this default message.
-
-We can override this default behavior by adding a middleware at the end of our route stack to handle unknown routes.
-
-**``middlewares/404.js``**  
-First, create a new middleware file that renders a custom 404 page:
-```
-module.exports = (req, res) => {
-const username = req.session.user?.username || null;
-  res.status(404).render('404', {
-    username:username,
-    messages:[{ category: 'danger', message: 'Page don\'t exist' }],
-    title: 'Page Not Found',
-    url: req.originalUrl
-  });
-};
-```
-**``views/404.ejs``**  
-Next, create a `404.ejs` view to display a friendly message to the user:
-```
-<%- include('partials/_navbar') %>
-  <h1>404 - Page Not Found</h1>
-  <p>Sorry, the page "<%= url %>" doesn’t exist.</p>
-  <a href="/">Go back to Home</a>
-<%- include('partials/_footer') %>
-```
-Finally, import and use this middleware at the very end of your middleware stack in **`app.js`**:
-
-```
-const notFoundHandler = require('./middlewares/404');
-
-// ... all other routes and middleware here ...
-
-// Handle unknown routes
-app.use(notFoundHandler);
-```
-With this in place, visiting a non-existent page such as `/random-url` will render your custom `404.ejs` template instead of the default plain HTML page.  
-This improves the overall user experience and keeps the app’s design consistent across all pages.
-## A Journey Through CSS Styling
-### Act I: The Specific Approach (Class-per-Element)
-When we first begin styling our web pages, the natural instinct is to give each element its own class and style it directly. For example:
-
-**Example CSS (not used in our app):**
-
-```css
-.login-page-button {
-  background-color: blue;
-  color: white;
-  padding: 10px 20px;
-  border-radius: 5px;
-}
-```
-
-**HTML:**
-
-```html
-<button class="login-page-button">Login</button>
-```
-
-At first, this feels simple and organized every element gets its own “label,” and we know exactly where its style lives.
-
-But very quickly, a problem appears:
-
-- The Register button will need almost the same styles as the Login button.
-    
-- Input fields across different pages also share similar styling.
-    
-- Suddenly, we’re copying and pasting the same rules over and over.
-    
-
-This creates duplication and makes our CSS harder to maintain. Imagine having 5 different button classes scattered around your project if you want to change the padding, you’d need to edit all of them.
-
-To fix this, we need to step back and notice patterns. Many elements aren’t unique snowflakes they belong to the same component family. Buttons share common traits, inputs share common traits. Instead of treating them as separate cases, we can extract those shared features and place them into special reusable classes.
-
-This shift in thinking is what leads us toward the reusable component approach in Act II.
-
-### Act II: The Reusable Component (Shared Classes)
-
-To fix the duplication problem from Act I, we need to change how we see our elements. Instead of thinking about each button or input as a one-off element, we treat them as components.  
-A component is simply a reusable piece of UI like a button, an input box, or a card. Each component has a base style that defines its common features. For example, all buttons might share padding, border-radius, and font weight.  
-On top of that, we can add variations (or modifiers) that adjust the base style like giving one button a blue background (.btn-primary) and another a gray background (.btn-secondary).  
-This way, our CSS is not about styling individual elements, but about describing what type of component the element is. When we create new elements in our HTML, we don’t invent a new class each time we simply apply the right combination of existing component classes.  
-Here’s what that looks like in practice:
-
-**Our `style.css` (already implemented):**
-
-```css
-.btn {
-  padding: 9px 14px;
-  border-radius: 8px;
-  text-decoration: none;
-  font-weight: 600;
-  cursor: pointer;
-  border: 1px solid transparent;
-}
-.btn-primary {
-  background: var(--accent);
-  color: white;
-  border-color: rgba(43,124,255,0.1);
-}
-```
-
-**HTML in Templates:**
-
-```html
-<button class="btn btn-primary">Register</button>
-```
-
-This is exactly the approach that **Bootstrap** and other frameworks popularized. They provide base classes (`.btn`, `.form-control`, `.card`) and variations (`.btn-primary`, `.btn-danger`, `.btn-outline`), letting developers build entire UIs just by combining classes.
-
-### Act III: The Utility-First Revolution
-
-The component approach from Act II is a big improvement over one-class-per-element, but it isn’t perfect. Components come with predefined styles for things like padding, margin, and borders.  
-But what if you need a button with slightly less padding? Or an input field with a custom margin? Suddenly, we’re stuck. we either:
-
-- Override the existing class (which feels messy), or
-    
-- Create a brand-new variation (like .btn-small or .btn-wide) amnd before long, we’re back to the duplication problem from Act I.
-    
-
-To solve this, a new idea emerged: instead of making classes for components, why not make classes for single styling functions?
+- Understand why web applications need databases.
+- Introduction to relational databases and PostgreSQL.
+- Understand the basic structure of relational databases (tables, rows, columns, and primary keys).
+- Learn the fundamentals of SQL (Structured Query Language).
+- Connect an Express application to a PostgreSQL database.
+- Create database tables and define constraints.
+- Perform SQL queries using the `pg` library.
+- Understand and implement CRUD operations (Create, Read, Update, Delete).
+- Retrieve and display database records dynamically using EJS.
+- Update and delete existing records.
+- Search and filter database records.
+- Handle database errors and missing resources.
+- Organize database-related code and configuration.
+
+## From Temporary Storage to Persistent Data
+
+In our previous workshop, we built a Quote Sharing Web Application using Express and EJS. Users could submit quotes, browse existing quotes, and search for quotes written by specific authors.
+
+However, we stored the submitted information inside a simple JavaScript array.
 
 For example:
 
-- p-4 → padding
-    
-- m-10 → margin
-    
-- text-lg → font size
-    
-- bg-blue-500 → background color
-    
+```javascript
+const quotes = [];
 
-With this approach, we’re not writing CSS to describe components—we’re building components directly in the HTML by stacking utility classes together.
-
-This is the philosophy behind utility-first frameworks like Tailwind CSS.
-
-**Example with Tailwind (hypothetical):**
-
-```html
-<button class="bg-blue-500 text-white p-4 rounded-md">Register</button>
+quotes.push({
+    author: 'Albert Einstein',
+    content: 'Life is like riding a bicycle. To keep your balance, you must keep moving.'
+});
 ```
 
-Here, every class is doing one small job: background, text color, padding, border radius. Together, they form a complete button. It’s like snapping LEGO bricks together each brick is tiny and simple, but combined, they make something powerful.
+This approach works perfectly for demonstrating how an application receives and processes information. However, it has an important limitation: **the data is stored in the application's memory and disappears when the server stops or restarts.**
 
-This approach has huge benefits:
+Imagine building a real application where users submit hundreds or thousands of quotes. We obviously don't want to lose all that information whenever we restart our server.
 
-- No need for CSS overrides we control spacing, sizing, and colors directly in the markup.
-    
-- Less CSS file bloat → most styles come from the framework.
-    
-- Faster prototyping we can build and tweak designs instantly without creating new CSS classes.
-    
+We need a way to store information permanently, retrieve it whenever necessary, and manage it independently of our application's execution.
 
-However, it does come with one small drawback: your HTML can look crowded with classes. A single element may end up with 6–10 classes, which feels like “class spam.” Some developers love this tradeoff, others find it messy.
+This is where **databases** become important.
+
+A database allows us to store, organize, retrieve, and modify information in a structured way. Instead of keeping everything inside our JavaScript application, we delegate data storage and management to a dedicated system.
+
+In this workshop, we will introduce PostgreSQL and learn how to connect it to our Express application.
+
+We will also revisit the Quote Sharing Application from our previous workshop and replace its temporary storage with a real database.
+
+This will allow our application to store submitted quotes permanently, retrieve them, update them, and delete them.
+
+## Introduction to Databases
+
+### What is a Database?
+
+A database is an organized collection of information that can be stored, retrieved, and modified efficiently.
+
+For example, an online store might have a database containing:
+
+- Customers and their accounts.
+- Products and their prices.
+- Orders and their details.
+- Payments and transactions.
+
+Instead of keeping all this information inside application code, the application communicates with the database whenever it needs to access or modify information.
+
+A **Database Management System (DBMS)** is software responsible for managing databases. It provides the tools and mechanisms needed to create databases, store information, execute queries, manage relationships, and control access to data.
+
+Some popular database management systems include:
+
+- PostgreSQL.
+- MySQL.
+- SQLite.
+- Microsoft SQL Server.
+- MongoDB.
+
+Different database systems organize and manage information differently. In this workshop, we will focus on relational databases.
+
+### Relational Databases
+
+A relational database organizes information into **tables**.
+
+Each table represents a particular entity or category of information, while its columns define the attributes and its rows contain individual records.
+
+For example, imagine we want to store information about the quotes submitted to our application.
+
+We could create a table called `quotes`:
+
+| id | author | content | created_at |
+|---|---|---|---|
+| 1 | Albert Einstein | Life is like riding a bicycle. | 2026-11-15 |
+| 2 | Steve Jobs | Stay hungry, stay foolish. | 2026-11-15 |
+| 3 | Nelson Mandela | It always seems impossible until it's done. | 2026-11-15 |
+
+Let's understand the structure:
+
+- **Table:** A collection of related records. In our example, the table is called `quotes`.
+- **Column:** An attribute describing the information stored in a table. Examples include `author` and `content`.
+- **Row:** A single record inside a table. Each submitted quote represents one row.
+
+Relational databases allow us to organize information into multiple tables and establish relationships between them.
+
+For example, an application might have a `users` table and a `posts` table. Each post could reference the user who created it.
+
+We will explore these relationships in a later workshop when we introduce user authentication and authorization.
+
+### Understanding Primary Keys
+
+When working with tables, we need a reliable way to identify individual records.
+
+Imagine that two users submit the same quote, or two different authors have the same name.
+
+Using the author's name or quote content to identify a record would be unreliable.
+
+This is why databases use **Primary Keys**.
+
+A primary key is a column, or a combination of columns, that uniquely identifies each row in a table.
+
+For example:
+
+| id | author | content |
+|---|---|---|
+| 1 | Alice | First quote |
+| 2 | Alice | Second quote |
+| 3 | Bob | Third quote |
+
+Here, the `id` column is the primary key.
+
+Even though Alice submitted two quotes, each quote has a different identifier.
+
+Primary keys allow us to retrieve, update, and delete specific records without confusing them with other records.
+
+### Introduction to SQL
+
+Relational databases use a language called **SQL (Structured Query Language)** to communicate with and manipulate data.
+
+SQL provides commands for creating tables, inserting records, retrieving information, updating existing data, and deleting records.
+
+Some of the most important SQL commands include:
+
+| SQL Command | Purpose |
+|---|---|
+| `CREATE TABLE` | Creates a new table. |
+| `INSERT` | Adds new records. |
+| `SELECT` | Retrieves records. |
+| `UPDATE` | Modifies existing records. |
+| `DELETE` | Removes records. |
+
+These operations form the foundation of database interaction and are commonly grouped under the term **CRUD**.
+
+We will explore CRUD in detail later in this workshop.
+
+## Introduction to PostgreSQL
+
+Now that we understand what databases are and how relational databases organize information, let's introduce the database system we will use.
+
+PostgreSQL is a powerful, open-source relational database management system.
+
+It allows us to store structured information, define relationships between tables, enforce constraints, and execute SQL queries.
+
+We choose PostgreSQL because:
+
+- It is open-source and widely used.
+- It supports relational database concepts and advanced SQL features.
+- It provides strong data integrity mechanisms.
+- It works well with Node.js and Express.
+- It is suitable for applications ranging from small projects to large production systems.
+
+In this workshop, PostgreSQL will be responsible for storing our application's quotes, while Express will handle incoming requests and communicate with the database.
+
+### Installing PostgreSQL
+
+First, we need PostgreSQL installed on our development machine.
+
+You can download it from the official website:
+
+[PostgreSQL Downloads](https://www.postgresql.org/download/)
+
+PostgreSQL also comes with `psql`, a command-line tool that allows us to connect to a database and execute SQL commands.
+
+Another convenient option is pgAdmin, which provides a graphical interface for managing PostgreSQL databases.
+
+After installation, open your terminal and check whether PostgreSQL is available:
+
+```bash
+psql --version
+```
+
+If the command works, PostgreSQL's command-line client is available.
+
+### Creating Our Database
+
+Before connecting Express to PostgreSQL, we need to create a database for our application.
+
+We will call it:
+
+```text
+quote_app
+```
+
+You can create it using pgAdmin or the PostgreSQL command-line interface.
+
+For example, connect to PostgreSQL using an administrative account:
+
+```bash
+psql -U postgres
+```
+
+Then execute:
+
+```sql
+CREATE ROLE quote_app_user
+WITH LOGIN PASSWORD 'choose-a-local-password';
+
+CREATE DATABASE quote_app
+OWNER quote_app_user;
+```
+
+Let's understand these commands.
+
+**CREATE ROLE**
+
+```sql
+CREATE ROLE quote_app_user
+WITH LOGIN PASSWORD 'choose-a-local-password';
+```
+
+Creates a database user called `quote_app_user`.
+
+We will use this account when our Express application connects to PostgreSQL.
+
+**CREATE DATABASE**
+
+```sql
+CREATE DATABASE quote_app
+OWNER quote_app_user;
+```
+
+Creates a database named `quote_app` and assigns ownership to our application user.
+
+We can now connect to the new database:
+
+```bash
+psql -h localhost -U quote_app_user -d quote_app
+```
+
+Enter the password when prompted.
+
+Alternatively, you can create the role and database through pgAdmin using its graphical interface.
+
+We now have a database ready for our application.
+
+## Connecting Express to PostgreSQL
+
+Now that PostgreSQL is installed and our database has been created, we need a way for our Express application to communicate with it.
+
+Node.js doesn't include a built-in PostgreSQL driver. We need a package that handles communication between JavaScript and PostgreSQL.
+
+For this, we will use **node-postgres**, commonly called `pg`.
+
+The `pg` library allows our Node.js application to connect to PostgreSQL, execute SQL statements, and retrieve query results.
+
+### Installing the Required Packages
+
+Inside our existing Quote Sharing project, install:
+
+```bash
+npm install pg dotenv
+```
+
+These packages provide:
+
+- `pg`: The PostgreSQL driver used to communicate with the database.
+- `dotenv`: Allows us to load environment variables from a `.env` file.
+
+We will use environment variables to store our database connection settings rather than writing credentials directly into our application code.
+
+### Configuring Environment Variables
+
+Create a `.env` file in the root directory of the project.
+
+**`.env`:**
+
+```env
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=quote_app
+DB_USER=quote_app_user
+DB_PASSWORD=choose-a-local-password
+
+SESSION_SECRET=your-generated-random-secret
+NODE_ENV=development
+```
+
+Let's understand these values:
+
+- `DB_HOST`: The hostname where PostgreSQL is running.
+- `DB_PORT`: The port PostgreSQL listens on. The default is usually `5432`.
+- `DB_NAME`: The database we want to connect to.
+- `DB_USER`: The PostgreSQL account used by our application.
+- `DB_PASSWORD`: The password associated with that account.
+- `SESSION_SECRET`: The secret used by our session middleware, which we introduced in Workshop 2.
+- `NODE_ENV`: Specifies the environment in which our application is running.
+
+The `dotenv` package loads these values into `process.env`, allowing us to access them from JavaScript.
+
+**Important:** Never upload your `.env` file to GitHub because it contains sensitive credentials.
+
+Create a `.gitignore` file if you don't already have one:
+
+```text
+node_modules/
+.env
+```
+
+This ensures Git ignores both installed dependencies and our environment configuration.
+
+### Creating the Database Connection
+
+As our application grows, we shouldn't establish a completely new database connection every time a route needs to execute a query.
+
+Instead, we can use a **connection pool**.
+
+A connection pool manages a collection of reusable database connections. When our application needs to execute a query, it obtains an available connection from the pool and returns it when the operation finishes.
+
+This avoids repeatedly establishing and closing database connections.
+
+The `pg` library provides the `Pool` class for this purpose.
+
+Let's create a folder called `db` in the root directory:
+
+```text
+quote_sharing_app/
+├── db/
+│   └── pool.js
+├── routes/
+├── views/
+├── public/
+├── .env
+├── .gitignore
+├── package.json
+└── app.js
+```
+
+**`db/pool.js`:**
+
+```javascript
+const { Pool } = require('pg');
+
+// Check required environment variables
+const requiredVariables = [
+    'DB_HOST',
+    'DB_NAME',
+    'DB_USER',
+    'DB_PASSWORD'
+];
+
+for (const variable of requiredVariables) {
+    if (!process.env[variable]) {
+        throw new Error(`${variable} is missing from the environment.`);
+    }
+}
+
+// Create the PostgreSQL connection pool
+const pool = new Pool({
+    host: process.env.DB_HOST,
+    port: Number(process.env.DB_PORT || 5432),
+    database: process.env.DB_NAME,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD
+});
+
+// Handle unexpected errors from idle connections
+pool.on('error', (error) => {
+    console.error('Unexpected database connection error:', error);
+});
+
+module.exports = pool;
+```
+
+Let's break down what happens here.
+
+First, we import the `Pool` class from the `pg` package.
+
+Then, we verify that our required environment variables exist. This prevents our application from silently starting with missing database credentials.
+
+Next, we create the connection pool:
+
+```javascript
+const pool = new Pool({
+    host: process.env.DB_HOST,
+    port: Number(process.env.DB_PORT || 5432),
+    database: process.env.DB_NAME,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD
+});
+```
+
+The connection settings tell our application where PostgreSQL is running and which database account to use.
+
+Finally, we export the pool:
+
+```javascript
+module.exports = pool;
+```
+
+This allows other files, especially our route handlers, to import the same connection pool and execute database queries.
+
+### Testing the Database Connection
+
+Before integrating PostgreSQL into our routes, let's verify that the connection works.
+
+Create a file inside the `db` folder.
+
+**`db/test-connection.js`:**
+
+```javascript
+const pool = require('./pool');
+
+async function testConnection() {
+
+    try {
+
+        const result = await pool.query(
+            'SELECT NOW() AS current_time'
+        );
+
+        console.log('Database connected successfully!');
+        console.log('Database time:', result.rows[0].current_time);
+
+    } catch (error) {
+
+        console.error('Database connection failed:', error.message);
+
+        process.exitCode = 1;
+
+    } finally {
+
+        await pool.end();
+
+    }
+
+}
+
+testConnection();
+```
+
+Before running the test, we need to load our `.env` file.
+
+Run:
+
+```bash
+node -r dotenv/config db/test-connection.js
+```
+
+If everything is configured correctly, you should see something similar to:
+
+```text
+Database connected successfully!
+Database time: 2026-11-15T...
+```
+
+We have now successfully connected Node.js to PostgreSQL.
+
+This is an important milestone because our Express application can now communicate with a real database.
+
+## Designing Our Database
+
+Now that our application can connect to PostgreSQL, we need to decide how to organize the information we want to store.
+
+Before writing SQL queries from Express, we must first create the database tables.
+
+We will start with a single table called `quotes`.
+
+### Creating the Quotes Table
+
+Our table needs to store the following information:
+
+| Column | Data Type | Purpose |
+|---|---|---|
+| id | INTEGER | Unique identifier for each quote. |
+| author | VARCHAR(100) | Name of the quote's author. |
+| content | VARCHAR(300) | The quote's text. |
+| created_at | TIMESTAMPTZ | When the quote was created. |
+| updated_at | TIMESTAMPTZ | When the quote was last updated. |
+
+Let's create a file called `schema.sql` inside our `db` directory.
+
+**`db/schema.sql`:**
+
+```sql
+CREATE TABLE IF NOT EXISTS quotes (
+
+    id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    author VARCHAR(100) NOT NULL,
+
+    content VARCHAR(300) NOT NULL,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT author_min_length
+        CHECK (char_length(btrim(author)) >= 3),
+
+    CONSTRAINT content_not_empty
+        CHECK (char_length(btrim(content)) > 0)
+
+);
+```
+
+Let's understand the table definition.
+
+**The `id` Column**
+
+```sql
+id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY
+```
+
+This creates an automatically generated identifier for each quote.
+
+- `INTEGER`: The column stores integer values.
+- `GENERATED ALWAYS AS IDENTITY`: PostgreSQL automatically generates a unique number whenever a new record is inserted.
+- `PRIMARY KEY`: Ensures that each record has a unique identifier.
+
+We don't need to manually generate IDs in our Express application.
+
+PostgreSQL handles this automatically.
+
+**The `author` Column**
+
+```sql
+author VARCHAR(100) NOT NULL
+```
+
+This stores the author's name.
+
+- `VARCHAR(100)`: Stores text with a maximum length of 100 characters.
+- `NOT NULL`: Prevents the column from containing a missing value.
+
+**The `content` Column**
+
+```sql
+content VARCHAR(300) NOT NULL
+```
+
+This stores the quote itself.
+
+We limit its maximum length to 300 characters to match the requirements from Workshop 2.
+
+**The Timestamp Columns**
+
+```sql
+created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+```
+
+This automatically stores the date and time when a quote is created.
+
+We also have:
+
+```sql
+updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+```
+
+This initially contains the creation time. We will update it whenever a quote is modified.
+
+**The Constraints**
+
+At the end, we define two additional constraints.
+
+```sql
+CHECK (char_length(btrim(author)) >= 3)
+```
+
+This ensures that the author's name contains at least three non-whitespace characters.
+
+And:
+
+```sql
+CHECK (char_length(btrim(content)) > 0)
+```
+
+This prevents empty or whitespace-only quotes.
+
+Notice that we already introduced validation using `express-validator` in Workshop 2.
+
+Why do we validate the data again inside the database?
+
+Because application-level validation and database constraints serve different purposes.
+
+- Application validation provides useful feedback to users.
+- Database constraints protect the integrity of stored data, even if information reaches the database through another application or an unexpected code path.
+
+This is an important principle: **validation in the application should not replace data integrity rules in the database.**
+
+### Executing the SQL File
+
+Now that we have defined our table, we need to execute the SQL file against our database.
+
+From the root directory of the project, run:
+
+```bash
+psql -h localhost -U quote_app_user -d quote_app -f db/schema.sql
+```
+
+Alternatively, you can open pgAdmin, connect to the `quote_app` database, open the Query Tool, and execute the contents of `schema.sql`.
+
+You should see a message indicating that the table was created successfully.
+
+To verify the table, connect to the database:
+
+```bash
+psql -h localhost -U quote_app_user -d quote_app
+```
+
+Then execute:
+
+```sql
+SELECT * FROM quotes;
+```
+
+Since we haven't inserted any quotes yet, the result should be empty.
+
+However, our table is ready to receive data.
+
+## Working with SQL Queries
+
+Before using PostgreSQL inside Express, let's understand how to communicate with our database using SQL.
+
+We introduced the main SQL commands earlier. Now we will explore them with practical examples using our `quotes` table.
+
+### INSERT: Adding New Records
+
+The `INSERT` command allows us to add new information to a table.
+
+For example:
+
+```sql
+INSERT INTO quotes (author, content)
+VALUES (
+    'Albert Einstein',
+    'Life is like riding a bicycle. To keep your balance, you must keep moving.'
+);
+```
+
+This inserts a new record into the `quotes` table.
+
+Notice that we don't provide an `id`, `created_at`, or `updated_at`.
+
+PostgreSQL automatically generates the ID and timestamps using the defaults we defined in the table.
+
+We can also use the `RETURNING` clause:
+
+```sql
+INSERT INTO quotes (author, content)
+VALUES ('Steve Jobs', 'Stay hungry, stay foolish.')
+RETURNING *;
+```
+
+`RETURNING *` tells PostgreSQL to return the newly inserted record.
+
+This is useful because our application may need the generated ID or other automatically generated values immediately after insertion.
+
+### SELECT: Retrieving Records
+
+The `SELECT` command retrieves information from a table.
+
+To retrieve all quotes:
+
+```sql
+SELECT * FROM quotes;
+```
+
+The asterisk (`*`) means that we want all columns.
+
+We can also retrieve only specific columns:
+
+```sql
+SELECT id, author, content
+FROM quotes;
+```
+
+This is useful when we don't need every column in the table.
+
+### Filtering Records with WHERE
+
+Sometimes we don't want every record.
+
+For example, we may want to retrieve quotes written by a specific author.
+
+We can use `WHERE`:
+
+```sql
+SELECT *
+FROM quotes
+WHERE author = 'Albert Einstein';
+```
+
+This returns only records whose author matches the specified value.
+
+We can also retrieve a specific quote using its ID:
+
+```sql
+SELECT *
+FROM quotes
+WHERE id = 1;
+```
+
+This is particularly useful when displaying or updating an individual record.
+
+### Sorting Records with ORDER BY
+
+We may want to display the newest quotes first.
+
+We can use `ORDER BY`:
+
+```sql
+SELECT *
+FROM quotes
+ORDER BY created_at DESC;
+```
+
+Here:
+
+- `ORDER BY` sorts the results.
+- `created_at` specifies which column we use for sorting.
+- `DESC` means descending order.
+
+This displays the newest quotes first.
+
+If we use `ASC`, records will be displayed in ascending order instead.
+
+### Limiting Results with LIMIT
+
+Sometimes retrieving every record isn't necessary.
+
+We can use `LIMIT` to control the number of returned rows.
+
+For example:
+
+```sql
+SELECT *
+FROM quotes
+ORDER BY created_at DESC
+LIMIT 10;
+```
+
+This retrieves only the ten most recent quotes.
+
+This is useful for our homepage, where we want to display a limited number of recent submissions.
+
+### UPDATE: Modifying Existing Records
+
+The `UPDATE` command modifies existing records.
+
+For example:
+
+```sql
+UPDATE quotes
+SET content = 'A new version of the quote.'
+WHERE id = 1;
+```
+
+This changes the content of the quote whose ID is `1`.
+
+Notice the importance of `WHERE`.
+
+Without it:
+
+```sql
+UPDATE quotes
+SET content = 'A new version of the quote.';
+```
+
+Every record in the table would be modified.
+
+Always be careful when updating or deleting records.
+
+### DELETE: Removing Records
+
+The `DELETE` command removes records from a table.
+
+For example:
+
+```sql
+DELETE FROM quotes
+WHERE id = 1;
+```
+
+This deletes the quote whose ID is `1`.
+
+Again, the `WHERE` condition is extremely important.
+
+Without it:
+
+```sql
+DELETE FROM quotes;
+```
+
+All records in the table would be removed.
+
+### Summary of CRUD Operations
+
+We have now introduced the four fundamental operations used to manage data.
+
+| Operation | SQL Command | Purpose |
+|---|---|---|
+| Create | INSERT | Add new records. |
+| Read | SELECT | Retrieve records. |
+| Update | UPDATE | Modify existing records. |
+| Delete | DELETE | Remove records. |
+
+These operations are collectively called **CRUD**, and they form the foundation of most data-driven applications.
+
+In the next section, we will connect these operations to Express routes and allow users to perform them through our website.
+
+## Integrating PostgreSQL into Our Express Application
+
+Now that we understand the database structure and basic SQL operations, it's time to connect everything to our existing web application.
+
+Remember that in Workshop 2, we created a Quote Sharing Application that stored quotes inside a JavaScript array.
+
+We will now replace that temporary storage with PostgreSQL.
+
+Instead of adding or retrieving information from a JavaScript array, our route handlers will execute SQL queries.
+
+The overall process will look like this:
+
+```text
+        USER
+          |
+          v
+      HTML FORM
+          |
+          v
+    EXPRESS ROUTE
+          |
+          v
+       SQL QUERY
+          |
+          v
+      POSTGRESQL
+          |
+          v
+     QUERY RESULT
+          |
+          v
+      EXPRESS
+          |
+          v
+       EJS VIEW
+          |
+          v
+        USER
+```
+
+### Updating Our Project Structure
+
+As we introduce database functionality, we will organize our project so that database configuration remains separate from route handling.
+
+Our updated structure will look like this:
+
+```text
+quote_sharing_app/
+├── db/
+│   ├── pool.js
+│   ├── schema.sql
+│   └── test-connection.js
+├── middlewares/
+│   └── csrf.js
+├── routes/
+│   └── quotes.js
+├── views/
+│   ├── partials/
+│   │   ├── _header.ejs
+│   │   ├── _navbar.ejs
+│   │   └── _footer.ejs
+│   ├── home.ejs
+│   ├── share.ejs
+│   ├── show.ejs
+│   ├── edit.ejs
+│   ├── search.ejs
+│   ├── 404.ejs
+│   └── error.ejs
+├── public/
+│   └── css/
+│       └── style.css
+├── .env
+├── .gitignore
+├── package.json
+├── package-lock.json
+└── app.js
+```
+
+We will keep the templates, static files, form validation, and CSRF protection from Workshop 2.
+
+Our main additions are:
+
+- `db/`: Contains database configuration and SQL schema.
+- `middlewares/`: Contains reusable middleware configuration.
+- `routes/quotes.js`: Handles the application's quote-related operations.
+
+### Configuring CSRF Protection
+
+In Workshop 2, we introduced CSRF protection using `csrf-sync` and `express-session`.
+
+We will continue using the same approach rather than introducing another CSRF implementation.
+
+Create the following file:
+
+**`middlewares/csrf.js`:**
+
+```javascript
+const { csrfSync } = require('csrf-sync');
+
+const {
+    generateToken,
+    csrfSynchronisedProtection
+} = csrfSync({
+    getTokenFromRequest: (req) => req.body?._csrf
+});
+
+module.exports = {
+    generateToken,
+    csrfSynchronisedProtection
+};
+```
+
+This allows us to import the token-generation function and protection middleware wherever we need them.
+
+Notice that `csrf-sync` stores the CSRF token in the current session by default. This is why session middleware must be registered before our application routes.
+
+We also configure the middleware to retrieve submitted tokens from the `_csrf` field in our HTML forms.
+
+### Understanding Parameterized Queries
+
+Before implementing our CRUD routes, there is one important concept we need to understand.
+
+When sending user input to PostgreSQL, we should never directly concatenate that input into SQL statements.
+
+Consider this example:
+
+```javascript
+const author = req.query.author;
+
+const result = await pool.query(
+    `SELECT * FROM quotes WHERE author = '${author}'`
+);
+```
+
+This is dangerous because the user controls the value of `author`.
+
+A malicious user could submit specially crafted input that changes the SQL statement being executed.
+
+This can lead to an attack called **SQL Injection**.
+
+To prevent this, we use **Parameterized Queries**.
+
+For example:
+
+```javascript
+const author = req.query.author;
+
+const result = await pool.query(
+    'SELECT * FROM quotes WHERE author = $1',
+    [author]
+);
+```
+
+Here, `$1` represents a parameter placeholder.
+
+The actual value is supplied separately through the second argument:
+
+```javascript
+[author]
+```
+
+For multiple parameters:
+
+```javascript
+const result = await pool.query(
+    `SELECT *
+     FROM quotes
+     WHERE author = $1
+     AND id = $2`,
+    [author, id]
+);
+```
+
+Here:
+
+- `$1` receives the author's name.
+- `$2` receives the quote ID.
+
+The database driver safely transmits the SQL statement and its values separately.
+
+This prevents user-provided values from being interpreted as SQL syntax.
+
+**Always use parameterized queries when inserting, searching, updating, or deleting data based on user input.**
+
+This is one of the most important database security practices students should learn.
+
+### Understanding Query Results
+
+When we execute a query using:
+
+```javascript
+const result = await pool.query(
+    'SELECT * FROM quotes'
+);
+```
+
+The returned object contains information about the executed query.
+
+The most important property for us is:
+
+```javascript
+result.rows
+```
+
+This contains an array of records returned by PostgreSQL.
+
+For example:
+
+```javascript
+console.log(result.rows);
+```
+
+Might produce:
+
+```javascript
+[
+    {
+        id: 1,
+        author: 'Albert Einstein',
+        content: 'Life is like riding a bicycle.',
+        created_at: 2026-11-15T...
+    },
+    {
+        id: 2,
+        author: 'Steve Jobs',
+        content: 'Stay hungry, stay foolish.',
+        created_at: 2026-11-15T...
+    }
+]
+```
+
+Other useful properties include:
+
+- `result.rowCount`: The number of rows affected by a query.
+- `result.command`: The SQL command that was executed.
+- `result.fields`: Metadata about returned columns.
+
+For our workshop, we will primarily use `result.rows` and sometimes `result.rowCount`.
+
+## Building Our First Database-Backed Application
+
+Now we can connect everything together.
+
+We will build the routes responsible for creating, displaying, searching, updating, and deleting quotes.
+
+Before implementing them, remember the relationship between HTTP methods and CRUD:
+
+| Operation | Typical HTTP Method | Route Example |
+|---|---|---|
+| Create | POST | `/share` |
+| Read | GET | `/` or `/quotes/1` |
+| Update | PUT or PATCH | `/quotes/1` |
+| Delete | DELETE | `/quotes/1` |
+
+Because traditional HTML forms support GET and POST directly, we will use POST for form submissions that update or delete records.
+
+The important point is the operation being performed, not simply the name of the HTTP method.
+
+### Creating the Quotes Router
+
+Create a new file:
+
+**`routes/quotes.js`:**
+
+Start by importing the required packages and configuring our router.
+
+```javascript
+const express = require('express');
+
+const {
+    body,
+    validationResult
+} = require('express-validator');
+
+const pool = require('../db/pool');
+
+const {
+    generateToken,
+    csrfSynchronisedProtection
+} = require('../middlewares/csrf');
+
+const router = express.Router();
+```
+
+Here:
+
+- `express` provides the router.
+- `express-validator` validates submitted form data.
+- `pool` provides access to our PostgreSQL database.
+- `generateToken` creates CSRF tokens.
+- `csrfSynchronisedProtection` protects state-changing requests.
+
+### Read: Displaying Quotes on the Homepage
+
+Let's start by retrieving the quotes stored in PostgreSQL.
+
+In Workshop 2, our homepage displayed information from a JavaScript array.
+
+Now we want it to retrieve the latest quotes directly from the database.
+
+Add the following route to `quotes.js`:
+
+```javascript
+// Display the latest quotes
+router.get('/', async (req, res) => {
+
+    const result = await pool.query(
+        `SELECT id, author, content, created_at
+         FROM quotes
+         ORDER BY created_at DESC
+         LIMIT 20`
+    );
+
+    res.render('home', {
+        quotes: result.rows,
+        title: 'Recent Quotes'
+    });
+
+});
+```
+
+Let's understand what happens here.
+
+First, we execute:
+
+```sql
+SELECT id, author, content, created_at
+FROM quotes
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
+This retrieves the 20 most recent quotes.
+
+We then access the returned records through:
+
+```javascript
+result.rows
+```
+
+Finally, we pass them to our EJS template:
+
+```javascript
+res.render('home', {
+    quotes: result.rows
+});
+```
+
+This makes the retrieved records available through the `quotes` variable inside our template.
+
+#### Creating the Homepage Template
+
+**`views/home.ejs`:**
+
+```ejs
+<%- include('partials/_header', { title: 'Recent Quotes' }) %>
+
+<%- include('partials/_navbar') %>
+
+<main>
+
+    <h1>Welcome to Quote Sharing!</h1>
+
+    <p>Discover and share inspiring quotes.</p>
+
+    <a href="/share" class="btn btn-primary">Share a Quote</a>
+
+    <h2>Recent Quotes</h2>
+
+    <% if (quotes.length > 0) { %>
+
+        <div class="quotes-list">
+
+            <% quotes.forEach(quote => { %>
+
+                <article class="quote-card">
+
+                    <blockquote>
+                        <%= quote.content %>
+                    </blockquote>
+
+                    <p>— <%= quote.author %></p>
+
+                    <a href="/quotes/<%= quote.id %>">
+                        View Quote
+                    </a>
+
+                    <small>
+                        <%= quote.created_at.toLocaleString() %>
+                    </small>
+
+                </article>
+
+            <% }); %>
+
+        </div>
+
+    <% } else { %>
+
+        <p>No quotes have been submitted yet.</p>
+
+    <% } %>
+
+</main>
+
+<%- include('partials/_footer') %>
+```
+
+Let's examine the important parts.
+
+We use:
+
+```ejs
+<% quotes.forEach(quote => { %>
+```
+
+to iterate over the records retrieved from PostgreSQL.
+
+For each quote, we display:
+
+- Its content.
+- Its author.
+- Its creation date.
+- A link to view the individual quote.
+
+Notice that we use:
+
+```ejs
+<%= quote.content %>
+```
+
+instead of:
+
+```ejs
+<%- quote.content %>
+```
+
+This ensures user-submitted text is HTML-escaped rather than interpreted as raw HTML.
+
+This is important because user-generated content should not be trusted as HTML.
+
+We also check whether the quotes array is empty and display an appropriate message when no records exist.
+
+### Create: Submitting a New Quote
+
+Next, we need to implement the operation that inserts new records into our database.
+
+In Workshop 2, we created a form that allowed users to submit quotes.
+
+We will reuse that idea, but instead of adding the submitted information to a JavaScript array, we will insert it into PostgreSQL.
+
+#### Displaying the Submission Form
+
+Add a GET route:
+
+```javascript
+// Display the quote submission form
+router.get('/share', (req, res) => {
+
+    res.render('share', {
+        csrfToken: generateToken(req),
+        errors: [],
+        values: {
+            author: '',
+            content: ''
+        },
+        title: 'Share a Quote'
+    });
+
+});
+```
+
+This route renders the form and generates a CSRF token for the current session.
+
+We also initialize the form values and validation errors.
+
+#### Validating and Processing the Form
+
+Now let's implement the POST route.
+
+```javascript
+// Handle quote submission
+router.post('/share',
+
+    csrfSynchronisedProtection,
+
+    [
+        body('author')
+            .isString()
+            .withMessage('Author must be text.')
+            .bail()
+            .trim()
+            .notEmpty()
+            .withMessage('Author name is required.')
+            .bail()
+            .isLength({ min: 3, max: 100 })
+            .withMessage('Author name must be between 3 and 100 characters.'),
+
+        body('content')
+            .isString()
+            .withMessage('Quote must be text.')
+            .bail()
+            .trim()
+            .notEmpty()
+            .withMessage('Quote cannot be empty.')
+            .bail()
+            .isLength({ max: 300 })
+            .withMessage('Quote must not exceed 300 characters.')
+
+    ],
+
+    async (req, res) => {
+
+        const errors = validationResult(req);
+
+        const values = {
+            author: typeof req.body.author === 'string' ? req.body.author : '',
+            content: typeof req.body.content === 'string' ? req.body.content : ''
+        };
+
+        // Return the form if validation fails
+        if (!errors.isEmpty()) {
+
+            return res.status(400).render('share', {
+                csrfToken: generateToken(req),
+                errors: errors.array(),
+                values,
+                title: 'Share a Quote'
+            });
+
+        }
+
+        const { author, content } = req.body;
+
+        // Insert the quote into PostgreSQL
+        const result = await pool.query(
+            `INSERT INTO quotes (author, content)
+             VALUES ($1, $2)
+             RETURNING id`,
+            [author, content]
+        );
+
+        const quoteId = result.rows[0].id;
+
+        res.redirect(`/quotes/${quoteId}`);
+
+    }
+
+);
+```
+
+Let's break down the implementation.
+
+**CSRF Protection**
+
+The first middleware:
+
+```javascript
+csrfSynchronisedProtection
+```
+
+verifies that the request contains a valid CSRF token before processing the form.
+
+**Input Validation**
+
+We use `express-validator`, just as we did in Workshop 2.
+
+The author must be between 3 and 100 characters, while the quote must not exceed 300 characters.
+
+We also trim the values and reject empty submissions.
+
+**Handling Validation Errors**
+
+We collect the errors using:
+
+```javascript
+const errors = validationResult(req);
+```
+
+If the submitted information is invalid, we render the form again and preserve the submitted values.
+
+**Database Insertion**
+
+If validation succeeds, we execute:
+
+```javascript
+const result = await pool.query(
+    `INSERT INTO quotes (author, content)
+     VALUES ($1, $2)
+     RETURNING id`,
+    [author, content]
+);
+```
+
+This is our first database insertion directly from an Express route.
+
+We use `$1` and `$2` as placeholders for the author's name and quote content.
+
+The submitted values are supplied separately through the array.
+
+Finally, `RETURNING id` gives us the identifier generated by PostgreSQL.
+
+We use that identifier to redirect the user to the newly created quote:
+
+```javascript
+res.redirect(`/quotes/${quoteId}`);
+```
+
+This is an example of the **Post/Redirect/Get** pattern.
+
+After a successful POST request, we redirect the browser to a GET route rather than displaying the result directly from the POST request.
+
+This avoids the usual browser form-resubmission problem when refreshing the resulting page.
+
+#### Creating the Submission Template
+
+**`views/share.ejs`:**
+
+```ejs
+<%- include('partials/_header', { title: 'Share a Quote' }) %>
+
+<%- include('partials/_navbar') %>
+
+<main>
+
+    <h1>Share a Quote</h1>
+
+    <form action="/share" method="POST">
+
+        <input
+            type="hidden"
+            name="_csrf"
+            value="<%= csrfToken %>"
+        >
+
+        <label for="author">Author Name:</label>
+
+        <input
+            type="text"
+            id="author"
+            name="author"
+            value="<%= values.author %>"
+            required
+        >
+
+        <% errors.forEach(error => { %>
+            <% if (error.path === 'author') { %>
+                <p class="error"><%= error.msg %></p>
+            <% } %>
+        <% }); %>
+
+        <label for="content">Quote:</label>
+
+        <textarea
+            id="content"
+            name="content"
+            maxlength="300"
+            required
+        ><%= values.content %></textarea>
+
+        <% errors.forEach(error => { %>
+            <% if (error.path === 'content') { %>
+                <p class="error"><%= error.msg %></p>
+            <% } %>
+        <% }); %>
+
+        <button type="submit" class="btn btn-primary">
+            Submit Quote
+        </button>
+
+    </form>
+
+</main>
+
+<%- include('partials/_footer') %>
+```
+
+The form contains two fields:
+
+- Author name.
+- Quote content.
+
+It also includes the hidden CSRF token.
+
+When submitted, the browser sends the form data to `/share` using POST.
+
+Our route validates the information and inserts it into PostgreSQL.
+
+### Read: Viewing an Individual Quote
+
+We already implemented a route that displays multiple quotes on the homepage.
+
+However, we also want users to open a specific quote.
+
+For example:
+
+```text
+http://localhost:3000/quotes/1
+```
+
+Here, `1` is the ID of the requested quote.
+
+Add the following route:
+
+```javascript
+// Display an individual quote
+router.get('/quotes/:id', async (req, res) => {
+
+    const id = Number(req.params.id);
+
+    // Validate the ID
+    if (!Number.isSafeInteger(id) || id < 1) {
+        return res.status(404).render('404', {
+            title: 'Page Not Found',
+            url: req.originalUrl
+        });
+    }
+
+    const result = await pool.query(
+        `SELECT id, author, content, created_at, updated_at
+         FROM quotes
+         WHERE id = $1`,
+        [id]
+    );
+
+    // Check whether the quote exists
+    if (result.rows.length === 0) {
+        return res.status(404).render('404', {
+            title: 'Quote Not Found',
+            url: req.originalUrl
+        });
+    }
+
+    res.render('show', {
+        quote: result.rows[0],
+        csrfToken: generateToken(req),
+        title: 'View Quote'
+    });
+
+});
+```
+
+Let's understand what happens here.
+
+First, we retrieve the ID from the URL:
+
+```javascript
+const id = Number(req.params.id);
+```
+
+Then, we verify that it is a positive safe integer.
+
+Next, we query PostgreSQL:
+
+```sql
+SELECT id, author, content, created_at, updated_at
+FROM quotes
+WHERE id = $1;
+```
+
+The ID is passed separately as a parameter.
+
+If the database doesn't contain a matching record, we return a `404 Not Found` response.
+
+Otherwise, we render the `show.ejs` template and pass the retrieved quote to it.
+
+#### Creating the Individual Quote Template
+
+**`views/show.ejs`:**
+
+```ejs
+<%- include('partials/_header', { title: 'View Quote' }) %>
+
+<%- include('partials/_navbar') %>
+
+<main>
+
+    <article class="quote-card">
+
+        <h1>Quote Details</h1>
+
+        <blockquote>
+            <%= quote.content %>
+        </blockquote>
+
+        <p>— <%= quote.author %></p>
+
+        <small>
+            Created:
+            <%= quote.created_at.toLocaleString() %>
+        </small>
+
+        <p>
+            Last updated:
+            <%= quote.updated_at.toLocaleString() %>
+        </p>
+
+    </article>
+
+    <div class="form-actions">
+
+        <a
+            href="/quotes/<%= quote.id %>/edit"
+            class="btn btn-primary"
+        >
+            Edit Quote
+        </a>
+
+        <form
+            action="/quotes/<%= quote.id %>/delete"
+            method="POST"
+            onsubmit="return confirm('Are you sure you want to delete this quote?')"
+        >
+
+            <input
+                type="hidden"
+                name="_csrf"
+                value="<%= csrfToken %>"
+            >
+
+            <button type="submit" class="btn btn-danger">
+                Delete Quote
+            </button>
+
+        </form>
+
+    </div>
+
+    <a href="/">Back to Home</a>
+
+</main>
+
+<%- include('partials/_footer') %>
+```
+
+Here, we display the information retrieved from PostgreSQL.
+
+We also provide two actions:
+
+- Edit Quote.
+- Delete Quote.
+
+The delete action is implemented as a POST form containing a CSRF token.
+
+This is important because deleting a record changes application data and should not be performed through a simple GET link.
+
+### Update: Editing an Existing Quote
+
+Now imagine a user notices a spelling mistake in a previously submitted quote.
+
+Instead of submitting another quote, we want to allow the existing record to be modified.
+
+This is where the UPDATE operation becomes useful.
+
+We need two routes:
+
+- GET `/quotes/:id/edit`: Displays the edit form.
+- POST `/quotes/:id/edit`: Processes the changes.
+
+#### Displaying the Edit Form
+
+Add:
+
+```javascript
+// Display the quote editing form
+router.get('/quotes/:id/edit', async (req, res) => {
+
+    const id = Number(req.params.id);
+
+    if (!Number.isSafeInteger(id) || id < 1) {
+        return res.status(404).render('404', {
+            title: 'Quote Not Found',
+            url: req.originalUrl
+        });
+    }
+
+    const result = await pool.query(
+        'SELECT * FROM quotes WHERE id = $1',
+        [id]
+    );
+
+    if (result.rows.length === 0) {
+        return res.status(404).render('404', {
+            title: 'Quote Not Found',
+            url: req.originalUrl
+        });
+    }
+
+    res.render('edit', {
+        quote: result.rows[0],
+        csrfToken: generateToken(req),
+        errors: [],
+        values: {
+            author: result.rows[0].author,
+            content: result.rows[0].content
+        },
+        title: 'Edit Quote'
+    });
+
+});
+```
+
+This route retrieves the existing quote and passes its information to the edit template.
+
+We also generate a CSRF token because the corresponding form will submit a state-changing request.
+
+#### Processing the Update
+
+Now we can implement the POST route:
+
+```javascript
+// Update an existing quote
+router.post('/quotes/:id/edit',
+
+    csrfSynchronisedProtection,
+
+    [
+        body('author')
+            .isString()
+            .withMessage('Author must be text.')
+            .bail()
+            .trim()
+            .notEmpty()
+            .withMessage('Author name is required.')
+            .bail()
+            .isLength({ min: 3, max: 100 })
+            .withMessage('Author name must be between 3 and 100 characters.'),
+
+        body('content')
+            .isString()
+            .withMessage('Quote must be text.')
+            .bail()
+            .trim()
+            .notEmpty()
+            .withMessage('Quote cannot be empty.')
+            .bail()
+            .isLength({ max: 300 })
+            .withMessage('Quote must not exceed 300 characters.')
+
+    ],
+
+    async (req, res) => {
+
+        const id = Number(req.params.id);
+
+        if (!Number.isSafeInteger(id) || id < 1) {
+            return res.status(404).render('404', {
+                title: 'Quote Not Found',
+                url: req.originalUrl
+            });
+        }
+
+        // Ensure the quote exists
+        const existingQuote = await pool.query(
+            'SELECT id FROM quotes WHERE id = $1',
+            [id]
+        );
+
+        if (existingQuote.rows.length === 0) {
+            return res.status(404).render('404', {
+                title: 'Quote Not Found',
+                url: req.originalUrl
+            });
+        }
+
+        const errors = validationResult(req);
+
+        const values = {
+            author: typeof req.body.author === 'string' ? req.body.author : '',
+            content: typeof req.body.content === 'string' ? req.body.content : ''
+        };
+
+        if (!errors.isEmpty()) {
+
+            return res.status(400).render('edit', {
+                quote: { id },
+                csrfToken: generateToken(req),
+                errors: errors.array(),
+                values,
+                title: 'Edit Quote'
+            });
+
+        }
+
+        const { author, content } = req.body;
+
+        const result = await pool.query(
+            `UPDATE quotes
+             SET author = $1,
+                 content = $2,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = $3
+             RETURNING id`,
+            [author, content, id]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).render('404', {
+                title: 'Quote Not Found',
+                url: req.originalUrl
+            });
+        }
+
+        res.redirect(`/quotes/${id}`);
+
+    }
+
+);
+```
+
+Let's break down the important parts.
+
+**Checking the Identifier**
+
+We first validate that the requested ID is a positive integer.
+
+Then we verify that the corresponding quote exists.
+
+This prevents us from trying to update a record that isn't present.
+
+**Validating User Input**
+
+Just like our creation form, we validate the author and quote content.
+
+If the input is invalid, we render the form again and preserve the submitted values.
+
+**Executing the UPDATE Query**
+
+The important operation is:
+
+```javascript
+const result = await pool.query(
+    `UPDATE quotes
+     SET author = $1,
+         content = $2,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = $3
+     RETURNING id`,
+    [author, content, id]
+);
+```
+
+Here:
+
+- `$1` represents the new author name.
+- `$2` represents the new quote content.
+- `$3` represents the ID of the record being modified.
+
+We use `WHERE id = $3` to make sure that only the requested quote is updated.
+
+We also change `updated_at` to the current timestamp.
+
+Finally, we redirect the user to the updated quote.
+
+#### Creating the Edit Template
+
+**`views/edit.ejs`:**
+
+```ejs
+<%- include('partials/_header', { title: 'Edit Quote' }) %>
+
+<%- include('partials/_navbar') %>
+
+<main>
+
+    <h1>Edit Quote</h1>
+
+    <form
+        action="/quotes/<%= quote.id %>/edit"
+        method="POST"
+    >
+
+        <input
+            type="hidden"
+            name="_csrf"
+            value="<%= csrfToken %>"
+        >
+
+        <label for="author">Author Name:</label>
+
+        <input
+            type="text"
+            id="author"
+            name="author"
+            value="<%= values.author %>"
+            required
+        >
+
+        <% errors.forEach(error => { %>
+            <% if (error.path === 'author') { %>
+                <p class="error"><%= error.msg %></p>
+            <% } %>
+        <% }); %>
+
+        <label for="content">Quote:</label>
+
+        <textarea
+            id="content"
+            name="content"
+            maxlength="300"
+            required
+        ><%= values.content %></textarea>
+
+        <% errors.forEach(error => { %>
+            <% if (error.path === 'content') { %>
+                <p class="error"><%= error.msg %></p>
+            <% } %>
+        <% }); %>
+
+        <button type="submit" class="btn btn-primary">
+            Save Changes
+        </button>
+
+    </form>
+
+    <a href="/quotes/<%= quote.id %>">Cancel</a>
+
+</main>
+
+<%- include('partials/_footer') %>
+```
+
+Notice that the form action contains the quote's ID:
+
+```html
+action="/quotes/<%= quote.id %>/edit"
+```
+
+This allows our server to know which record the user wants to modify.
+
+### Delete: Removing a Quote
+
+The final CRUD operation is deleting an existing record.
+
+We already added a delete form to our individual quote page.
+
+Now we need to implement the corresponding route.
+
+```javascript
+// Delete an existing quote
+router.post(
+    '/quotes/:id/delete',
+
+    csrfSynchronisedProtection,
+
+    async (req, res) => {
+
+        const id = Number(req.params.id);
+
+        if (!Number.isSafeInteger(id) || id < 1) {
+            return res.status(404).render('404', {
+                title: 'Quote Not Found',
+                url: req.originalUrl
+            });
+        }
+
+        const result = await pool.query(
+            `DELETE FROM quotes
+             WHERE id = $1
+             RETURNING id`,
+            [id]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).render('404', {
+                title: 'Quote Not Found',
+                url: req.originalUrl
+            });
+        }
+
+        res.redirect('/');
+
+    }
+);
+
+module.exports = router;
+```
+
+Let's understand what happens.
+
+First, we retrieve the quote ID from the URL.
+
+Then, we execute:
+
+```sql
+DELETE FROM quotes
+WHERE id = $1
+RETURNING id;
+```
+
+This tells PostgreSQL to delete the record matching the supplied ID.
+
+The `RETURNING` clause allows us to check whether a record was actually deleted.
+
+If no matching record exists, PostgreSQL returns no rows, and we display a 404 page.
+
+Otherwise, the user is redirected to the homepage.
+
+We have now implemented the four main CRUD operations in Express.
+
+**An important security limitation:** At this stage, our application doesn't have user authentication. Consequently, the edit and delete routes are accessible to anyone who can reach them. This is acceptable only for this isolated learning exercise. Don't deploy the application in this form. In the next workshop, we will introduce authentication and authorization and restrict these operations to permitted users.
+
+### Search: Finding Quotes by Author
+
+We have already learned how to retrieve records, but sometimes users don't want to display every quote.
+
+They may want to find quotes written by a particular author.
+
+In Workshop 2, we created a search form that used query parameters.
+
+We will preserve that functionality but replace the JavaScript-array search with an SQL query.
+
+Add the following route:
+
+```javascript
+// Search quotes by author
+router.get('/search', async (req, res) => {
+
+    const author = typeof req.query.author === 'string'
+        ? req.query.author.trim()
+        : '';
+
+    let quotes = [];
+    let searched = false;
+
+    if (author) {
+
+        const result = await pool.query(
+            `SELECT id, author, content, created_at
+             FROM quotes
+             WHERE LOWER(author) = LOWER($1)
+             ORDER BY created_at DESC`,
+            [author]
+        );
+
+        quotes = result.rows;
+        searched = true;
+
+    }
+
+    res.render('search', {
+        author,
+        quotes,
+        searched,
+        title: 'Search Quotes'
+    });
+
+});
+```
+
+Let's understand this query:
+
+```sql
+SELECT id, author, content, created_at
+FROM quotes
+WHERE LOWER(author) = LOWER($1)
+ORDER BY created_at DESC;
+```
+
+The `LOWER()` function converts text to lowercase before comparing it.
+
+This means searching for:
+
+```text
+Albert Einstein
+```
+
+will also match:
+
+```text
+ALBERT EINSTEIN
+```
+
+and:
+
+```text
+albert einstein
+```
+
+We also use `ORDER BY created_at DESC` to display the newest matching quotes first.
+
+Notice that the query still uses a parameterized value rather than directly inserting the search term into the SQL statement.
+
+#### Creating the Search Template
+
+**`views/search.ejs`:**
+
+```ejs
+<%- include('partials/_header', { title: 'Search Quotes' }) %>
+
+<%- include('partials/_navbar') %>
+
+<main>
+
+    <h1>Search Quotes</h1>
+
+    <form action="/search" method="GET">
+
+        <label for="author">Author Name:</label>
+
+        <input
+            type="text"
+            id="author"
+            name="author"
+            value="<%= author %>"
+            placeholder="Enter an author's name"
+        >
+
+        <button type="submit">
+            Search
+        </button>
+
+    </form>
+
+    <% if (searched) { %>
+
+        <h2>Search Results</h2>
+
+        <% if (quotes.length > 0) { %>
+
+            <% quotes.forEach(quote => { %>
+
+                <article class="quote-card">
+
+                    <blockquote>
+                        <%= quote.content %>
+                    </blockquote>
+
+                    <p>— <%= quote.author %></p>
+
+                    <a href="/quotes/<%= quote.id %>">
+                        View Quote
+                    </a>
+
+                </article>
+
+            <% }); %>
+
+        <% } else { %>
+
+            <p>No quotes found for author.</p>
+
+        <% } %>
+
+    <% } %>
+
+</main>
+
+<%- include('partials/_footer') %>
+```
+
+Here, the form uses GET:
+
+```html
+<form action="/search" method="GET">
+```
+
+When someone searches for an author, the browser sends the search term through a query parameter.
+
+For example:
+
+```text
+http://localhost:3000/search?author=Albert%20Einstein
+```
+
+Our Express route retrieves the value through:
+
+```javascript
+req.query.author
+```
+
+Then it sends the value to PostgreSQL and displays the matching results.
+
+This is an excellent example of how the concepts from Workshop 1, Workshop 2, and Workshop 3 work together.
+
+## Configuring Our Express Application
+
+We have implemented the different operations, but our routes are still defined inside a separate router file.
+
+We need to mount this router into the main Express application.
+
+Before doing that, let's review the middleware we need.
+
+From Workshop 2, we already introduced:
+
+- EJS as our templating engine.
+- `express.static()` for serving static files.
+- `express.urlencoded()` for parsing form submissions.
+- `express-session` for managing sessions.
+- `csrf-sync` for CSRF protection.
+
+We will keep those concepts and continue using the same implementation.
+
+We don't need to introduce another templating engine, session system, or form-processing mechanism.
+
+### Updating `app.js`
+
+Our final `app.js` should look like this:
+
+**`app.js`:**
+
+```javascript
+require('dotenv').config();
+
+const express = require('express');
+const path = require('path');
+const session = require('express-session');
+
+const pool = require('./db/pool');
+
+const app = express();
+const PORT = 3000;
+
+// Check the session secret
+if (!process.env.SESSION_SECRET) {
+    throw new Error('SESSION_SECRET is required.');
+}
+
+// Configure EJS
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
+
+// Serve static files
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Parse form data
+app.use(express.urlencoded({
+    extended: false,
+    limit: '10kb'
+}));
+
+// Configure sessions
+app.use(session({
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 1000 * 60 * 60
+    }
+}));
+
+// Register application routes
+app.use('/', require('./routes/quotes'));
+
+// Handle unknown routes
+app.use((req, res) => {
+    res.status(404).render('404', {
+        title: 'Page Not Found',
+        url: req.originalUrl
+    });
+});
+
+// Handle application errors
+app.use((err, req, res, next) => {
+
+    if (res.headersSent) {
+        return next(err);
+    }
+
+    // Handle invalid CSRF tokens
+    if (err.code === 'EBADCSRFTOKEN') {
+        return res.status(403).render('error', {
+            title: 'Invalid Submission',
+            message: 'Your form submission is invalid or has expired. Please reload the form and try again.'
+        });
+    }
+
+    console.error(err);
+
+    res.status(500).render('error', {
+        title: 'Server Error',
+        message: 'Something went wrong while processing your request.'
+    });
+
+});
+
+// Start the server after checking the database connection
+async function startServer() {
+
+    try {
+
+        await pool.query('SELECT 1');
+
+        console.log('Database connected successfully!');
+
+        app.listen(PORT, () => {
+            console.log(`Server running on http://localhost:${PORT}`);
+        });
+
+    } catch (error) {
+
+        console.error('Unable to connect to PostgreSQL:');
+        console.error(error.message);
+
+        process.exit(1);
+
+    }
+
+}
+
+startServer();
+```
+
+Let's understand the important parts.
+
+**Middleware Configuration**
+
+We register the middleware before mounting our routes.
+
+For example:
+
+```javascript
+app.use(express.urlencoded({
+    extended: false,
+    limit: '10kb'
+}));
+```
+
+This allows Express to parse submitted form data before our route handlers attempt to access `req.body`.
+
+We also configure the session middleware before our routes because CSRF protection depends on the session.
+
+**Registering Our Router**
+
+```javascript
+app.use('/', require('./routes/quotes'));
+```
+
+This connects all the routes defined inside `quotes.js` to our main application.
+
+We don't need to manually define each route inside `app.js`.
+
+**Handling Unknown Routes**
+
+The following middleware handles requests that don't match any registered route:
+
+```javascript
+app.use((req, res) => {
+    res.status(404).render('404', {
+        title: 'Page Not Found',
+        url: req.originalUrl
+    });
+});
+```
+
+It must appear after our application routes.
+
+**Handling Errors**
+
+We also define error-handling middleware with four arguments:
+
+```javascript
+(err, req, res, next)
+```
+
+It handles unexpected application errors and invalid CSRF tokens.
+
+Notice that we don't expose database error details to users. We log the error on the server and return a generic message to the browser.
+
+This workshop uses Express 5, which automatically forwards rejected promises from asynchronous route handlers to error-handling middleware. If you are using Express 4, asynchronous errors must be forwarded explicitly.
+
+**Checking the Database Connection**
+
+Before starting the HTTP server, we execute:
+
+```javascript
+await pool.query('SELECT 1');
+```
+
+This checks whether PostgreSQL is reachable.
+
+If the connection fails, the application reports the problem instead of starting with an unavailable database.
+
+### Creating the Error Templates
+
+We need two templates for our error responses.
+
+**`views/404.ejs`:**
+
+```ejs
+<%- include('partials/_header', { title: title }) %>
+
+<%- include('partials/_navbar') %>
+
+<main>
+
+    <h1>404 - Page Not Found</h1>
+
+    <p>
+        Sorry, the requested resource
+        <strong><%= url %></strong>
+        could not be found.
+    </p>
+
+    <a href="/">Return to Home</a>
+
+</main>
+
+<%- include('partials/_footer') %>
+```
+
+**`views/error.ejs`:**
+
+```ejs
+<%- include('partials/_header', { title: title }) %>
+
+<%- include('partials/_navbar') %>
+
+<main>
+
+    <h1><%= title %></h1>
+
+    <p><%= message %></p>
+
+    <a href="/">Return to Home</a>
+
+</main>
+
+<%- include('partials/_footer') %>
+```
+
+These templates use the reusable components introduced in Workshop 2.
+
+### Running Our Application
+
+Now everything is connected.
+
+Make sure:
+
+- PostgreSQL is running.
+- The `quote_app` database exists.
+- The `quotes` table has been created.
+- Your `.env` file is configured.
+- The database connection works.
+
+Run:
+
+```bash
+node app.js
+```
+
+You should see:
+
+```text
+Database connected successfully!
+Server running at http://localhost:3000
+```
+
+Visit:
+
+```text
+http://localhost:3000
+```
+
+Our homepage should appear.
+
+Submit a quote through `/share`, and it should be inserted into PostgreSQL.
+
+You can verify this by connecting to the database and executing:
+
+```sql
+SELECT * FROM quotes;
+```
+
+You should see the newly submitted quote.
+
+Now restart the Express server and visit the homepage again.
+
+**The submitted quotes should still be there.**
+
+This is the most important difference between our previous implementation and the current one.
+
+We are no longer storing application data temporarily in JavaScript memory. We are using PostgreSQL to persist information independently of our server's execution.
+
+## Understanding What We Have Built
+
+Let's step back and examine the complete application.
+
+In Workshop 1, we learned how Express receives HTTP requests and sends responses.
+
+In Workshop 2, we learned how to render HTML pages, process forms, and validate submitted information.
+
+Now, in Workshop 3, we have introduced a database that stores our application's information permanently.
+
+Our application follows this process:
+
+```text
+         USER
+           |
+           v
+      HTML PAGE
+        (EJS)
+           |
+           v
+       HTTP REQUEST
+           |
+           v
+     EXPRESS ROUTE
+           |
+           v
+     INPUT VALIDATION
+           |
+           v
+      PARAMETERIZED
+        SQL QUERY
+           |
+           v
+       POSTGRESQL
+           |
+           v
+       QUERY RESULT
+           |
+           v
+      EXPRESS ROUTE
+           |
+           v
+      EJS TEMPLATE
+           |
+           v
+          HTML
+           |
+           v
+          USER
+```
+
+Each technology has a specific responsibility:
+
+| Technology | Responsibility |
+|---|---|
+| Express | Handles incoming requests and application routes. |
+| EJS | Generates dynamic HTML pages. |
+| express-validator | Validates submitted information. |
+| csrf-sync | Protects state-changing form submissions against CSRF. |
+| node-postgres (`pg`) | Connects Node.js to PostgreSQL. |
+| PostgreSQL | Stores and manages application data. |
+
+This is a basic example of how modern server-rendered applications are structured.
+
+## Tasks
+
+Now that we have connected PostgreSQL to Express and implemented CRUD operations, let's practice extending our application.
+
+### Task 1: Add Quote Categories
+
+Currently, our quotes only contain an author and content.
+
+Extend the application by introducing categories.
+
+For example:
+
+- Motivation.
+- Life.
+- Technology.
+- Success.
+- Education.
+
+Your task is to:
+
+1. Add a `category` column to the quotes table.
+2. Update the submission form to include a category field.
+3. Validate the submitted category.
+4. Insert the category into PostgreSQL.
+5. Display the category alongside each quote.
+6. Update the edit functionality so that users can change a quote's category.
+
+For this task, you can use a fixed list of categories in an HTML `<select>` element.
+
+### Task 2: Search Quotes by Content
+
+Currently, our search functionality finds quotes by author.
+
+Extend it so users can also search through the quote text.
+
+For example:
+
+```text
+/search?content=life
+```
+
+The application should retrieve quotes containing the specified word or phrase.
+
+Hint: PostgreSQL provides the `ILIKE` operator for case-insensitive pattern matching.
+
+Example:
+
+```sql
+SELECT *
+FROM quotes
+WHERE content ILIKE $1;
+```
+
+Remember to pass the search pattern as a parameter rather than concatenating user input into the SQL statement.
+
+### Task 3: Display the Total Number of Quotes
+
+Improve the homepage by displaying the total number of quotes stored in the database.
+
+For example:
+
+```text
+Total Quotes: 125
+```
+
+Hint:
+
+```sql
+SELECT COUNT(*) FROM quotes;
+```
+
+This introduces SQL aggregate functions and demonstrates how to retrieve statistics from a database.
+
+### Task 4: Add Pagination
+
+Currently, the homepage displays the 20 most recent quotes.
+
+What happens when our application contains thousands of quotes?
+
+Retrieving and displaying every record on a single page is inefficient.
+
+Modify the homepage to display only a limited number of quotes per page.
+
+For example:
+
+- Page 1: Quotes 1–10.
+- Page 2: Quotes 11–20.
+- Page 3: Quotes 21–30.
+
+Hint: PostgreSQL provides `LIMIT` and `OFFSET`.
+
+For example:
+
+```sql
+SELECT *
+FROM quotes
+ORDER BY created_at DESC
+LIMIT 10 OFFSET 0;
+```
+
+Then:
+
+```sql
+SELECT *
+FROM quotes
+ORDER BY created_at DESC
+LIMIT 10 OFFSET 10;
+```
+
+Use a query parameter such as `?page=2` to determine which records should be displayed.
+
+### Task 5: Improve Quote Management
+
+Extend the application so that:
+
+- Users can see when a quote was last modified.
+- The homepage displays the newest quotes first.
+- Invalid quote IDs return a proper 404 response.
+- Deleting a quote requires confirmation.
+- Database errors are handled without exposing internal database information to the user.
+
+## Final Project: Building a Database-Backed Quote Sharing Application
+
+For the final project, we will take the Quote Sharing Application from Workshop 2 and transform it into a persistent web application.
+
+The objective is to combine everything we have learned across the three workshops.
+
+### Functional Requirements
+
+#### Homepage (`/`)
+
+- Retrieve quotes from PostgreSQL.
+- Display the most recent quotes.
+- Show the author and creation date.
+- Display a message when no quotes exist.
+
+#### Quote Submission (`/share`)
+
+- Allow users to submit an author name and quote content.
+- Validate submitted information.
+- Store valid submissions in PostgreSQL.
+- Protect the form with CSRF tokens.
+- Preserve submitted values when validation fails.
+
+#### Individual Quote (`/quotes/:id`)
+
+- Retrieve a quote using its unique identifier.
+- Display its information.
+- Provide links for editing and deleting the quote.
+
+#### Editing (`/quotes/:id/edit`)
+
+- Retrieve the existing quote.
+- Display its current information.
+- Allow the user to modify it.
+- Validate changes before updating the database.
+
+#### Deleting (`/quotes/:id/delete`)
+
+- Delete the selected quote.
+- Verify that the record exists.
+- Protect the deletion request using CSRF.
+- Redirect to the homepage after successful deletion.
+
+#### Searching (`/search`)
+
+- Search for quotes by author.
+- Support case-insensitive matching.
+- Display all matching results.
+- Show an appropriate message when no results are found.
+
+#### Database Requirements
+
+- Use PostgreSQL to store all quotes.
+- Use a primary key to identify each quote.
+- Store creation and modification timestamps.
+- Use parameterized SQL queries.
+- Apply appropriate database constraints.
+
+#### Application Requirements
+
+- Use Express for routing.
+- Use EJS for dynamic HTML rendering.
+- Reuse the partials introduced in Workshop 2.
+- Serve static files through `express.static()`.
+- Validate all submitted information on the server.
+- Protect state-changing forms with CSRF tokens.
+- Handle missing records and database errors.
+
+**Important:** Editing and deleting are unrestricted in this workshop because we haven't introduced authentication yet. This is a development-only limitation. In the next workshop, we will introduce user accounts and permissions to ensure that users can only manage the records they are authorized to modify.
+
+### Suggested Project Structure
+
+Your final project should be organized as follows:
+
+```text
+quote_sharing_app/
+│
+├── db/
+│   ├── pool.js
+│   ├── schema.sql
+│   └── test-connection.js
+│
+├── middlewares/
+│   └── csrf.js
+│
+├── routes/
+│   └── quotes.js
+│
+├── views/
+│   ├── partials/
+│   │   ├── _header.ejs
+│   │   ├── _navbar.ejs
+│   │   └── _footer.ejs
+│   │
+│   ├── home.ejs
+│   ├── share.ejs
+│   ├── show.ejs
+│   ├── edit.ejs
+│   ├── search.ejs
+│   ├── 404.ejs
+│   └── error.ejs
+│
+├── public/
+│   └── css/
+│       └── style.css
+│
+├── .env
+├── .gitignore
+├── package.json
+├── package-lock.json
+└── app.js
+```
+
+By completing this project, you should understand how to build a server-rendered application that communicates with a real relational database.
+
+You will have moved beyond temporary JavaScript storage and learned how to create, retrieve, update, and delete persistent records using PostgreSQL.
+
+This knowledge will prepare us for the next workshop, where we will introduce user accounts, authentication, and authorization.
