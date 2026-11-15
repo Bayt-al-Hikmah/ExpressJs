@@ -1,0 +1,131 @@
+<%- include("../partials/_header") %>
+<%- include("../partials/_navbar") %>
+
+<main id="main">
+  <div class="container">
+    <div class="page-head">
+      <div>
+        <span class="eyebrow">Seller tools</span>
+        <h1>Manage my products</h1>
+        <p>Create products, upload galleries and replace or delete individual images.</p>
+      </div>
+      <span class="badge badge--brand"><%= products.length %> product<%= products.length === 1 ? '' : 's' %></span>
+    </div>
+
+    <div class="split">
+      <section>
+        <% if (products.length > 0) { %>
+          <div class="grid">
+            <% products.forEach(p => { %>
+              <article class="card">
+                <div class="card-header">
+                  <div>
+                    <h2 class="mb-0"><%= p.name %></h2>
+                    <p class="muted mb-0"><%= p.category %> · $<%= p.price %></p>
+                  </div>
+                  <a class="btn btn-secondary btn-sm" href="/products/<%= p.id %>">View</a>
+                </div>
+
+                <% if (p.description) { %><p><%= p.description %></p><% } %>
+
+                <h3>Images</h3>
+                <% if (p.images.length > 0) { %>
+                  <div class="gallery">
+                    <% p.images.forEach(img => { %>
+                      <figure class="media-item">
+                        <img src="/products/images/<%= img.id %>/file" alt="<%= img.originalName || p.name %>">
+                        <figcaption>
+                          <% if (img.isMain) { %><span class="badge badge--brand">Main</span><% } else { %><span class="badge">Gallery</span><% } %>
+                        </figcaption>
+                        <div class="media-actions">
+                          <form action="/products/images/<%= img.id %>/replace" method="POST" enctype="multipart/form-data" novalidate>
+                            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                            <label class="visually-hidden" for="replace-<%= img.id %>">Replace image</label>
+                            <input id="replace-<%= img.id %>" type="file" name="image" accept="image/jpeg,image/png,image/webp" required>
+                            <button class="btn btn-secondary btn-sm" type="submit">Replace</button>
+                          </form>
+                          <form action="/products/images/<%= img.id %>/delete" method="POST" onsubmit="return confirm('Delete this image?')">
+                            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                            <button class="btn btn-danger btn-sm" type="submit">Delete image</button>
+                          </form>
+                        </div>
+                      </figure>
+                    <% }); %>
+                  </div>
+                <% } else { %>
+                  <p class="muted">No images yet. Upload a few below.</p>
+                <% } %>
+
+                <div class="card-footer">
+                  <form action="/products/<%= p.id %>/images" method="POST" enctype="multipart/form-data" novalidate>
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <div class="form-grid form-grid--two">
+                      <div class="field">
+                        <label for="images-<%= p.id %>">Upload images <span class="required" aria-hidden="true">*</span></label>
+                        <input id="images-<%= p.id %>" type="file" name="images" multiple accept="image/jpeg,image/png,image/webp" required>
+                      </div>
+                      <div class="field">
+                        <span class="field-label">Options</span>
+                        <label class="checkbox-row" for="main-<%= p.id %>">
+                          <input id="main-<%= p.id %>" type="checkbox" name="main" value="true">
+                          <span>Set the first image as main if none exists</span>
+                        </label>
+                      </div>
+                    </div>
+                    <div class="form-actions">
+                      <button class="btn btn-sm" type="submit">Upload images</button>
+                    </div>
+                  </form>
+
+                  <form class="inline-form mt-2" action="/products/<%= p.id %>/delete" method="POST" onsubmit="return confirm('Delete this product and all of its images?')">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button class="btn btn-danger btn-sm" type="submit">Delete product</button>
+                  </form>
+                </div>
+              </article>
+            <% }); %>
+          </div>
+        <% } else { %>
+          <div class="empty-state">
+            <span class="empty-icon" aria-hidden="true">+</span>
+            <h3>No products yet</h3>
+            <p>Create your first product with the form on the right.</p>
+          </div>
+        <% } %>
+      </section>
+
+      <aside>
+        <form class="form-card" action="/products" method="POST" novalidate>
+          <h2>Create product</h2>
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+          <div class="field">
+            <label for="name">Name <span class="required" aria-hidden="true">*</span></label>
+            <input id="name" name="name" type="text" maxlength="120" required>
+          </div>
+
+          <div class="field">
+            <label for="category">Category <span class="required" aria-hidden="true">*</span></label>
+            <input id="category" name="category" type="text" maxlength="80" required>
+          </div>
+
+          <div class="field">
+            <label for="price">Price <span class="required" aria-hidden="true">*</span></label>
+            <input id="price" name="price" type="number" step="0.01" min="0" required>
+          </div>
+
+          <div class="field">
+            <label for="description">Description</label>
+            <textarea id="description" name="description" maxlength="1000"></textarea>
+          </div>
+
+          <div class="form-actions">
+            <button class="btn-block" type="submit">Create product</button>
+          </div>
+        </form>
+      </aside>
+    </div>
+  </div>
+</main>
+
+<%- include("../partials/_footer") %>

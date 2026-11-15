@@ -1,0 +1,35 @@
+<%- include('partials/_header', { title: 'About' }) %>
+<%- include('partials/_navbar') %>
+
+<main id="main">
+  <div class="container container--narrow">
+    <div class="page-head">
+      <div>
+        <span class="eyebrow">About this example</span>
+        <h1>About Acme Studio</h1>
+        <p>This page reuses the same header, navbar and footer partials as the home page.</p>
+      </div>
+    </div>
+
+    <section class="card">
+      <h2>How the page is built</h2>
+      <p>Each view includes three partials. The header opens the document, the navbar renders before the content, and the footer closes the page.</p>
+      <ul class="list">
+        <li class="list-item"><span class="list-item-main"><code>partials/_header.ejs</code> — document head and opening body tag</span><span class="badge">Partial</span></li>
+        <li class="list-item"><span class="list-item-main"><code>partials/_navbar.ejs</code> — site navigation</span><span class="badge">Partial</span></li>
+        <li class="list-item"><span class="list-item-main"><code>partials/_footer.ejs</code> — footer and closing tags</span><span class="badge">Partial</span></li>
+      </ul>
+    </section>
+
+    <section class="card mt-2">
+      <h2>Try it yourself</h2>
+      <p>Change the navigation partial and reload either page. Both pages update at once because they share the same source.</p>
+      <div class="btn-row">
+        <a class="btn" href="/">Back home</a>
+        <a class="btn btn-secondary" href="/about">Reload this page</a>
+      </div>
+    </section>
+  </div>
+</main>
+
+<%- include('partials/_footer') %>

@@ -1,0 +1,16 @@
+{
+  "name": "forms-validation-csrf",
+  "version": "1.0.0",
+  "private": true,
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "csrf-sync": "^4.0.3",
+    "ejs": "^3.1.10",
+    "express": "^5.0.0",
+    "express-session": "^1.18.1",
+    "express-validator": "^7.2.1"
+  }
+}

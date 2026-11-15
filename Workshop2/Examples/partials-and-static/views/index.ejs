@@ -1,0 +1,57 @@
+<%- include('partials/_header', { title: 'Home' }) %>
+<%- include('partials/_navbar') %>
+
+<main id="main">
+  <div class="container">
+    <section class="hero">
+      <div class="hero-grid">
+        <div>
+          <span class="eyebrow">Express + EJS</span>
+          <h1>Welcome to Acme Studio!</h1>
+          <p>This page is assembled from reusable partials and served alongside static assets. Update the header or footer once and every page follows.</p>
+          <div class="hero-actions">
+            <a class="btn" href="/about">Learn about us</a>
+            <a class="btn btn-secondary" href="#features">See how it works</a>
+          </div>
+        </div>
+        <div class="stat-grid">
+          <div class="stat"><span class="stat-value">3</span><span class="stat-label">Shared partials</span></div>
+          <div class="stat"><span class="stat-value">2</span><span class="stat-label">Pages</span></div>
+          <div class="stat"><span class="stat-value">1</span><span class="stat-label">Stylesheet</span></div>
+          <div class="stat"><span class="stat-value">0</span><span class="stat-label">Duplicated markup</span></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="section-head">
+      <h2 id="features">Why use partials?</h2>
+      <span class="badge badge--brand">Reusable by design</span>
+    </div>
+    <div class="grid grid-3">
+      <article class="card">
+        <h3>One header, every page</h3>
+        <p>Document start, meta tags and the stylesheet live in a single partial, so every page stays consistent.</p>
+      </article>
+      <article class="card">
+        <h3>Navigation in one place</h3>
+        <p>Add a link once in the navbar partial and it appears across the whole site automatically.</p>
+      </article>
+      <article class="card">
+        <h3>Static assets, simple paths</h3>
+        <p>Images and CSS are served from <code>/public</code> and referenced with clean absolute URLs.</p>
+      </article>
+    </div>
+
+    <section class="card mt-2">
+      <div class="cluster">
+        <img src="/images/logo.svg" alt="Acme Studio logo" width="72" height="72">
+        <div>
+          <h2 class="mb-0">A tiny site with a tidy structure</h2>
+          <p class="mb-0 muted">The logo above is a static asset served by Express.</p>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<%- include('partials/_footer') %>

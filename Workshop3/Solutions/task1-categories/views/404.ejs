@@ -1,0 +1,18 @@
+<%- include('partials/_header') %>
+<%- include('partials/_navbar') %>
+
+<main id="main">
+  <div class="container container--narrow">
+    <div class="empty-state" style="padding:3rem 1.5rem">
+      <span class="empty-icon" aria-hidden="true">404</span>
+      <h1>Page not found</h1>
+      <p><strong><%= url %></strong> could not be found. It may have been moved or deleted.</p>
+      <div class="btn-row">
+        <a class="btn" href="/">Return home</a>
+        <a class="btn btn-secondary" href="/search">Search quotes</a>
+      </div>
+    </div>
+  </div>
+</main>
+
+<%- include('partials/_footer') %>

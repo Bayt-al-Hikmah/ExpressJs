@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Event Board — browse, publish and manage community events with the Express API.">
+  <title>Event Board · Community events</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="/">
+        <span class="brand-mark" aria-hidden="true">EB</span>
+        <span>Event Board</span>
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a class="nav-link" href="#events" aria-current="page">Browse events</a></li>
+          <li><a class="nav-link" href="#account">Account</a></li>
+        </ul>
+      </nav>
+      <div class="header-actions" id="header-actions">
+        <a class="btn btn-secondary btn-sm" href="#account" id="header-login">Log in</a>
+        <a class="btn btn-sm" href="#account" id="header-register">Register</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="container">
+      <section class="hero">
+        <div class="hero-grid">
+          <div>
+            <span class="eyebrow">Community calendar</span>
+            <h1>Find your next event.</h1>
+            <p>Browse published events, filter by category and search by title or description. Create an account to publish and manage your own events.</p>
+            <div class="hero-actions">
+              <a class="btn" href="#events">Browse events</a>
+              <a class="btn btn-secondary" href="#account">Log in to create</a>
+            </div>
+          </div>
+          <div class="stat-grid">
+            <div class="stat"><span class="stat-value" id="stat-events">—</span><span class="stat-label">Events found</span></div>
+            <div class="stat"><span class="stat-value" id="stat-pages">—</span><span class="stat-label">Pages</span></div>
+          </div>
+        </div>
+      </section>
+
+      <div class="split">
+        <section id="events" aria-labelledby="events-title">
+          <div class="page-head">
+            <div>
+              <span class="eyebrow">Event list</span>
+              <h2 id="events-title">Upcoming events</h2>
+              <p>Results are ordered by start date. Use the filters to narrow things down.</p>
+            </div>
+            <span class="badge badge--brand" id="events-count">Loading…</span>
+          </div>
+
+          <form class="filter-bar" id="filters" role="search">
+            <div class="field">
+              <label for="search">Search</label>
+              <input id="search" name="search" type="search" placeholder="Title or description" autocomplete="off">
+            </div>
+            <div class="field" style="flex:0 0 auto">
+              <label for="category">Category</label>
+              <select id="category" name="category">
+                <option value="">All categories</option>
+                <option value="EDUCATION">Education</option>
+                <option value="SOCIAL">Social</option>
+                <option value="TECHNOLOGY">Technology</option>
+                <option value="OTHER">Other</option>
+              </select>
+            </div>
+            <div class="form-actions" style="margin:0">
+              <button type="submit">Apply filters</button>
+              <button type="button" class="btn-secondary" id="clear-filters">Clear</button>
+            </div>
+          </form>
+
+          <div id="events-status" class="status-line" role="status" aria-live="polite"></div>
+          <div id="events-list" class="grid"></div>
+
+          <nav class="pagination" id="pagination" aria-label="Event pages" hidden>
+            <button type="button" class="btn-secondary" id="prev-page">← Previous</button>
+            <span id="page-indicator" aria-current="page">Page 1 of 1</span>
+            <button type="button" class="btn-secondary" id="next-page">Next →</button>
+          </nav>
+        </section>
+
+        <aside id="account">
+          <section class="card">
+            <div class="card-header">
+              <h2 class="mb-0">Account</h2>
+              <span class="badge" id="auth-badge">Checking…</span>
+            </div>
+            <p class="muted" id="auth-status" role="status" aria-live="polite">Checking your session…</p>
+
+            <div id="logged-in" hidden>
+              <p>Signed in as <strong id="current-username">—</strong>.</p>
+              <button type="button" class="btn btn-secondary btn-block" id="logout">Log out</button>
+            </div>
+
+            <div id="logged-out">
+              <div class="tabs" role="tablist" aria-label="Account forms">
+                <button type="button" class="tab" role="tab" id="tab-login" aria-selected="true" aria-controls="login-panel">Log in</button>
+                <button type="button" class="tab" role="tab" id="tab-register" aria-selected="false" aria-controls="register-panel">Register</button>
+              </div>
+
+              <div id="login-panel" role="tabpanel" aria-labelledby="tab-login">
+                <form id="login" novalidate>
+                  <div class="field">
+                    <label for="login-email">Email</label>
+                    <input id="login-email" name="email" type="email" autocomplete="email" required>
+                  </div>
+                  <div class="field">
+                    <label for="login-password">Password</label>
+                    <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+                  </div>
+                  <div class="form-actions">
+                    <button class="btn-block" type="submit">Log in</button>
+                  </div>
+                </form>
+              </div>
+
+              <div id="register-panel" role="tabpanel" aria-labelledby="tab-register" hidden>
+                <form id="register" novalidate>
+                  <div class="field">
+                    <label for="register-email">Email</label>
+                    <input id="register-email" name="email" type="email" autocomplete="email" required>
+                  </div>
+                  <div class="field">
+                    <label for="register-username">Username</label>
+                    <input id="register-username" name="username" type="text" autocomplete="username" minlength="3" maxlength="25" pattern="[A-Za-z0-9_]+" required>
+                    <p class="hint">3–25 characters: letters, numbers and underscores.</p>
+                  </div>
+                  <div class="field">
+                    <label for="register-password">Password</label>
+                    <input id="register-password" name="password" type="password" autocomplete="new-password" minlength="12" required>
+                    <p class="hint">At least 12 characters.</p>
+                  </div>
+                  <div class="form-actions">
+                    <button class="btn-block" type="submit">Create account</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </section>
+
+          <section class="card mt-2" id="create-section" hidden>
+            <h2>Create an event</h2>
+            <p class="muted">Published events appear in the public list immediately.</p>
+
+            <form id="create-event" novalidate>
+              <div class="field">
+                <label for="event-title">Title <span class="required" aria-hidden="true">*</span></label>
+                <input id="event-title" name="title" type="text" maxlength="120" required>
+              </div>
+              <div class="field">
+                <label for="event-description">Description <span class="required" aria-hidden="true">*</span></label>
+                <textarea id="event-description" name="description" required></textarea>
+              </div>
+              <div class="field">
+                <label for="event-location">Location <span class="required" aria-hidden="true">*</span></label>
+                <input id="event-location" name="location" type="text" maxlength="120" required>
+              </div>
+              <div class="field">
+                <label for="event-date">Starts at <span class="required" aria-hidden="true">*</span></label>
+                <input id="event-date" name="startsAt" type="datetime-local" required>
+              </div>
+              <div class="field">
+                <label for="event-category">Category</label>
+                <select id="event-category" name="category">
+                  <option value="OTHER">Other</option>
+                  <option value="EDUCATION">Education</option>
+                  <option value="SOCIAL">Social</option>
+                  <option value="TECHNOLOGY">Technology</option>
+                </select>
+              </div>
+              <div class="form-actions">
+                <button class="btn-block" type="submit">Publish event</button>
+              </div>
+            </form>
+          </section>
+        </aside>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <p>&copy; 2026 Event Board · Express Workshop</p>
+      <p>JSON API with a small progressive front end</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>

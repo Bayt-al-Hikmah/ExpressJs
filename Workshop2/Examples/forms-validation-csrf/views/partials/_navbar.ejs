@@ -1,0 +1,15 @@
+<header class="site-header">
+  <div class="container header-inner">
+    <a class="brand" href="/contact">
+      <span class="brand-mark" aria-hidden="true">CF</span>
+      <span>Contact Forms</span>
+    </a>
+    <nav aria-label="Form examples">
+      <ul class="nav-links">
+        <li><a class="nav-link" href="/contact" <%= title === 'Contact Us' ? 'aria-current="page"' : '' %>>Manual</a></li>
+        <li><a class="nav-link" href="/contact_val" <%= title === 'Validated Contact Form' ? 'aria-current="page"' : '' %>>Validated</a></li>
+        <li><a class="nav-link" href="/contact_csrf" <%= title === 'CSRF Protected Contact Form' ? 'aria-current="page"' : '' %>>CSRF protected</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>

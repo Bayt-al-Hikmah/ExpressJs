@@ -1,0 +1,20 @@
+{
+  "name": "prisma-basics",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "migrate": "prisma migrate dev --name init",
+    "generate": "prisma generate",
+    "demo": "node -r dotenv/config demo.js"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.0.0",
+    "@prisma/client": "^7.0.0",
+    "dotenv": "^16.4.5",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "prisma": "^7.0.0"
+  }
+}

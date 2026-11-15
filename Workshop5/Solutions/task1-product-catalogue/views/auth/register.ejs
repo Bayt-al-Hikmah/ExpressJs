@@ -1,0 +1,45 @@
+<%- include("../partials/_header") %>
+<%- include("../partials/_navbar") %>
+
+<main id="main">
+  <div class="container">
+    <div class="auth-wrap">
+      <section class="auth-card">
+        <span class="eyebrow">Sell your work</span>
+        <h1>Create account</h1>
+        <p class="auth-sub">Choose a username and a password of at least 12 characters.</p>
+
+        <% if (errors.length > 0) { %>
+          <div class="error-summary" role="alert">
+            <strong>Please fix the following:</strong>
+            <ul><% errors.forEach(e => { %><li><%= e.msg %></li><% }); %></ul>
+          </div>
+        <% } %>
+
+        <form method="POST" action="/register" novalidate>
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+          <div class="field">
+            <label for="username">Username</label>
+            <input id="username" name="username" type="text" value="<%= values.username %>" autocomplete="username" minlength="3" maxlength="25" required>
+            <p class="hint">3–25 characters.</p>
+          </div>
+
+          <div class="field">
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" autocomplete="new-password" minlength="12" required>
+            <p class="hint">At least 12 characters.</p>
+          </div>
+
+          <div class="form-actions">
+            <button class="btn-block" type="submit">Create account</button>
+          </div>
+        </form>
+
+        <p class="auth-footer">Already registered? <a href="/login">Log in</a></p>
+      </section>
+    </div>
+  </div>
+</main>
+
+<%- include("../partials/_footer") %>

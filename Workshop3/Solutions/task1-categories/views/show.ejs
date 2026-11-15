@@ -1,0 +1,39 @@
+<%- include('partials/_header') %>
+<%- include('partials/_navbar') %>
+
+<main id="main">
+  <div class="container container--narrow">
+    <div class="page-head">
+      <div>
+        <span class="eyebrow">Quote details</span>
+        <h1>Quote details</h1>
+      </div>
+      <span class="badge">Quote #<%= quote.id %></span>
+    </div>
+
+    <article class="card">
+      <blockquote><%= quote.content %></blockquote>
+      <p class="quote-meta">
+        <span class="quote-author">— <%= quote.author %></span>
+        <% if (quote.category) { %><span class="badge badge--brand"><%= quote.category %></span><% } %>
+      </p>
+      <ul class="meta">
+        <li><strong>Created:</strong> <%= new Date(quote.created_at).toLocaleString() %></li>
+        <li><strong>Last updated:</strong> <%= new Date(quote.updated_at).toLocaleString() %></li>
+      </ul>
+
+      <div class="card-footer">
+        <div class="btn-row">
+          <a class="btn" href="/quotes/<%= quote.id %>/edit">Edit quote</a>
+          <a class="btn btn-secondary" href="/">Back home</a>
+        </div>
+        <form action="/quotes/<%= quote.id %>/delete" method="POST" onsubmit="return confirm('Are you sure you want to delete this quote? This cannot be undone.')">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button class="btn btn-danger" type="submit">Delete quote</button>
+        </form>
+      </div>
+    </article>
+  </div>
+</main>
+
+<%- include('partials/_footer') %>

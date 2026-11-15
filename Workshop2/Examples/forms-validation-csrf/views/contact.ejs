@@ -1,0 +1,53 @@
+<%- include('partials/_header', { title }) %>
+<%- include('partials/_navbar') %>
+
+<main id="main">
+  <div class="container container--narrow">
+    <div class="page-head">
+      <div>
+        <span class="eyebrow">Step 1 · Manual checks</span>
+        <h1>Contact us</h1>
+        <p>A plain form with hand-written validation. Submit it empty to see the error messages.</p>
+      </div>
+    </div>
+
+    <% if (submittedName) { %>
+      <div class="alert alert--success" role="status">
+        <span aria-hidden="true">&#10003;</span>
+        <div><strong>Thanks for your message, <%= submittedName %>!</strong><br>We have received your note.</div>
+      </div>
+    <% } %>
+
+    <% if (errors.length > 0) { %>
+      <div class="error-summary" role="alert">
+        <strong>Please fix the following:</strong>
+        <ul>
+          <% errors.forEach(error => { %><li><%= error %></li><% }); %>
+        </ul>
+      </div>
+    <% } %>
+
+    <form class="form-card" action="/contact" method="POST" novalidate>
+      <div class="field">
+        <label for="name">Name <span class="required" aria-hidden="true">*</span></label>
+        <input type="text" id="name" name="name" value="<%= values.name %>" autocomplete="name" minlength="3" maxlength="25" required>
+        <p class="hint">Between 3 and 25 characters.</p>
+      </div>
+
+      <div class="field">
+        <label for="message">Message <span class="required" aria-hidden="true">*</span></label>
+        <textarea id="message" name="message" maxlength="200" required><%= values.message %></textarea>
+        <p class="hint">Up to 200 characters.</p>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit">Send message</button>
+        <a class="btn btn-secondary" href="/contact">Reset</a>
+      </div>
+    </form>
+
+    <p class="muted mt-2"><small>Next: try the <a href="/contact_val">validated version</a> or the <a href="/contact_csrf">CSRF-protected version</a>.</small></p>
+  </div>
+</main>
+
+<%- include('partials/_footer') %>

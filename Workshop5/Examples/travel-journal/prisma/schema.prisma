@@ -1,0 +1,64 @@
+generator client {
+  provider            = "prisma-client-js"
+  output              = "../generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db { 
+  provider = "postgresql" 
+}
+
+enum MediaKind { 
+  IMAGE 
+  VIDEO 
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique @db.VarChar(25)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  trips        Trip[]
+  @@map("users")
+}
+
+model Trip {
+  id          Int            @id @default(autoincrement())
+  title       String         @db.VarChar(100)
+  destination String?        @db.VarChar(120)
+  description String?        @db.Text
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  userId      Int            @map("user_id")
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entries     JournalEntry[]
+  @@index([userId])
+  @@map("trips")
+}
+
+model JournalEntry {
+  id        Int          @id @default(autoincrement())
+  title     String       @db.VarChar(120)
+  story     String?      @db.Text
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  tripId    Int          @map("trip_id")
+  trip      Trip         @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  media     MediaAsset[]
+  @@index([tripId])
+  @@map("journal_entries")
+}
+
+model MediaAsset {
+  id           Int          @id @default(autoincrement())
+  storageName  String       @unique @map("storage_name") @db.VarChar(255)
+  originalName String       @map("original_name") @db.VarChar(180)
+  mimeType     String       @map("mime_type") @db.VarChar(100)
+  sizeBytes    Int          @map("size_bytes")
+  kind         MediaKind
+  caption      String?      @db.VarChar(200)
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  entryId      Int          @map("entry_id")
+  entry        JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  @@index([entryId])
+  @@map("media_assets")
+}

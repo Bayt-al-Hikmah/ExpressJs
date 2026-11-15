@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Multer basics — single and multiple image uploads with Express.">
+  <title>Multer Basics · Image uploads</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="/">
+        <span class="brand-mark" aria-hidden="true">M</span>
+        <span>Multer Basics</span>
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a class="nav-link" href="#single" aria-current="page">Single upload</a></li>
+          <li><a class="nav-link" href="#multiple">Multiple upload</a></li>
+        </ul>
+      </nav>
+      <div class="header-actions">
+        <span class="badge">Max 2 MB per file</span>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="container">
+      <section class="hero">
+        <span class="eyebrow">File handling</span>
+        <h1>Upload images with Multer</h1>
+        <p>Two endpoints, two behaviours: one accepts a single photo, the other accepts up to three images at once. Accepted formats are JPEG, PNG and WebP.</p>
+        <div class="hero-actions">
+          <a class="btn" href="#single">Try a single upload</a>
+          <a class="btn btn-secondary" href="#multiple">Try multiple uploads</a>
+        </div>
+      </section>
+
+      <div class="grid grid-2">
+        <section class="form-card" id="single" aria-labelledby="single-title">
+          <h2 id="single-title">Single image</h2>
+          <p class="muted">Sends one file to <code>POST /upload-single</code> using the <code>photo</code> field.</p>
+
+          <form id="single-form" action="/upload-single" method="POST" enctype="multipart/form-data" novalidate>
+            <div class="field">
+              <label for="photo">Choose an image <span class="required" aria-hidden="true">*</span></label>
+              <input id="photo" type="file" name="photo" accept="image/jpeg,image/png,image/webp" required>
+              <p class="hint" id="single-file">No file selected.</p>
+            </div>
+            <div class="form-actions">
+              <button type="submit">Upload image</button>
+            </div>
+          </form>
+
+          <div id="single-result" class="status-line" role="status" aria-live="polite"></div>
+        </section>
+
+        <section class="form-card" id="multiple" aria-labelledby="multiple-title">
+          <h2 id="multiple-title">Multiple images</h2>
+          <p class="muted">Sends up to three files to <code>POST /upload-multiple</code> using the <code>photos</code> field.</p>
+
+          <form id="multiple-form" action="/upload-multiple" method="POST" enctype="multipart/form-data" novalidate>
+            <div class="field">
+              <label for="photos">Choose up to 3 images <span class="required" aria-hidden="true">*</span></label>
+              <input id="photos" type="file" name="photos" accept="image/jpeg,image/png,image/webp" multiple required>
+              <p class="hint" id="multiple-file">No files selected.</p>
+            </div>
+            <div class="form-actions">
+              <button type="submit">Upload images</button>
+            </div>
+          </form>
+
+          <div id="multiple-result" class="status-line" role="status" aria-live="polite"></div>
+        </section>
+      </div>
+
+      <section class="card mt-2">
+        <h2>What happens on the server?</h2>
+        <div class="grid grid-3">
+          <div>
+            <h3>1. Storage</h3>
+            <p class="muted">Files are written to <code>storage/uploads</code> with a random UUID filename.</p>
+          </div>
+          <div>
+            <h3>2. Validation</h3>
+            <p class="muted">MIME type and size are checked before the file is accepted.</p>
+          </div>
+          <div>
+            <h3>3. Response</h3>
+            <p class="muted">The API returns JSON describing the uploaded files or a helpful error.</p>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <p>&copy; 2026 Express Workshop · Multer Basics</p>
+      <p>Served from <code>/public</code></p>
+    </div>
+  </footer>
+
+  <script src="/js/app.js" defer></script>
+</body>
+</html>

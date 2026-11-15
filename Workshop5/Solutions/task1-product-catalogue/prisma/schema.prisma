@@ -1,0 +1,42 @@
+generator client {
+  provider            = "prisma-client-js"
+  output              = "../generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db { 
+  provider = "postgresql" 
+}
+
+model User {
+  id           Int       @id @default(autoincrement())
+  username     String    @unique @db.VarChar(25)
+  passwordHash String    @map("password_hash") @db.VarChar(255)
+  products     Product[]
+  @@map("users")
+}
+model Product {
+  id          Int            @id @default(autoincrement())
+  name        String         @db.VarChar(120)
+  description String?        @db.Text
+  price       Decimal        @db.Decimal(10,2)
+  category    String         @db.VarChar(60)
+  ownerId     Int            @map("owner_id")
+  owner       User           @relation(fields:[ownerId], references:[id], onDelete:Cascade)
+  images      ProductImage[]
+  @@index([ownerId])
+  @@map("products")
+}
+model ProductImage {
+  id           Int     @id @default(autoincrement())
+  storageName  String  @unique @map("storage_name") @db.VarChar(255)
+  originalName String  @map("original_name") @db.VarChar(180)
+  mimeType     String  @map("mime_type") @db.VarChar(100)
+  sizeBytes    Int     @map("size_bytes")
+  isMain       Boolean @default(false) @map("is_main")
+  productId    Int     @map("product_id")
+  product      Product @relation(fields:[productId], references:[id], onDelete:Cascade)
+  @@index([productId])
+  @@map("product_images")
+}

@@ -1,0 +1,109 @@
+<%- include('../partials/_header') %>
+<%- include('../partials/_navbar') %>
+
+<main id="main">
+  <div class="container">
+    <div class="page-head">
+      <div>
+        <span class="eyebrow">Recipe organizer</span>
+        <h1>My recipes</h1>
+        <p>Save recipes with prep time, instructions and an ingredient list.</p>
+      </div>
+      <span class="badge badge--brand"><%= recipes.length %> recipe<%= recipes.length === 1 ? '' : 's' %></span>
+    </div>
+
+    <div class="split">
+      <section>
+        <% if (errors.length > 0) { %>
+          <div class="error-summary" role="alert">
+            <strong>Please fix the following:</strong>
+            <ul><% errors.forEach(e => { %><li><%= e.msg %></li><% }); %></ul>
+          </div>
+        <% } %>
+
+        <% if (recipes.length > 0) { %>
+          <div class="grid">
+            <% recipes.forEach(r => { %>
+              <article class="card">
+                <div class="card-header">
+                  <div>
+                    <h2 class="mb-0"><%= r.name %></h2>
+                    <p class="muted mb-0">Prep time: <%= r.preparationTime %> min</p>
+                  </div>
+                  <form class="inline-form" action="/projects/<%= r.id %>/delete" method="POST" onsubmit="return confirm('Delete this recipe?')">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+                  </form>
+                </div>
+
+                <% if (r.description) { %><p><%= r.description %></p><% } %>
+
+                <h3>Ingredients</h3>
+                <ul class="list">
+                  <% r.ingredients.forEach(i => { %>
+                    <li class="list-item">
+                      <span class="list-item-main"><%= i.ingredient.name %></span>
+                      <span class="badge"><%= i.quantity %></span>
+                    </li>
+                  <% }); %>
+                </ul>
+
+                <h3>Instructions</h3>
+                <p style="white-space:pre-line"><%= r.instructions %></p>
+              </article>
+            <% }); %>
+          </div>
+        <% } else { %>
+          <div class="empty-state">
+            <span class="empty-icon" aria-hidden="true">+</span>
+            <h3>No recipes yet</h3>
+            <p>Add your first recipe using the form on the right.</p>
+          </div>
+        <% } %>
+      </section>
+
+      <aside>
+        <form class="form-card" action="/projects" method="POST" novalidate>
+          <h2>New recipe</h2>
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+          <div class="field">
+            <label for="name">Name <span class="required" aria-hidden="true">*</span></label>
+            <input id="name" name="name" type="text" value="<%= values.name %>" maxlength="120" required>
+          </div>
+
+          <div class="field">
+            <label for="description">Description</label>
+            <input id="description" name="description" type="text" value="<%= values.description %>" maxlength="200">
+          </div>
+
+          <div class="field">
+            <label for="preparationTime">Prep time (minutes) <span class="required" aria-hidden="true">*</span></label>
+            <input id="preparationTime" name="preparationTime" type="number" min="1" value="<%= values.preparationTime %>" required>
+          </div>
+
+          <div class="field">
+            <label for="instructions">Instructions <span class="required" aria-hidden="true">*</span></label>
+            <textarea id="instructions" name="instructions" required><%= values.instructions %></textarea>
+          </div>
+
+          <div class="field">
+            <label for="ingredientName">Ingredient <span class="required" aria-hidden="true">*</span></label>
+            <input id="ingredientName" name="ingredientName" type="text" value="<%= values.ingredientName %>" maxlength="120" required>
+          </div>
+
+          <div class="field">
+            <label for="quantity">Quantity <span class="required" aria-hidden="true">*</span></label>
+            <input id="quantity" name="quantity" type="text" value="<%= values.quantity %>" placeholder="e.g. 2 cups" maxlength="60" required>
+          </div>
+
+          <div class="form-actions">
+            <button class="btn-block" type="submit">Create recipe</button>
+          </div>
+        </form>
+      </aside>
+    </div>
+  </div>
+</main>
+
+<%- include('../partials/_footer') %>

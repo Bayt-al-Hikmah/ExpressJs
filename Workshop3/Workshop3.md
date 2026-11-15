@@ -167,7 +167,6 @@ We choose PostgreSQL because:
 - It is suitable for applications ranging from small projects to large production systems.
 
 In this workshop, PostgreSQL will be responsible for storing our application's quotes, while Express will handle incoming requests and communicate with the database.
-
 ### Installing PostgreSQL
 
 First, we need PostgreSQL installed on our development machine.
@@ -190,9 +189,9 @@ If the command works, PostgreSQL's command-line client is available.
 
 ### Creating Our Database
 
-Before connecting Express to PostgreSQL, we need to create a database for our application.
+Before connecting Express to PostgreSQL, we need to create a database and a dedicated user account for our application.
 
-We will call it:
+We will call our database:
 
 ```text
 quote_app
@@ -200,18 +199,30 @@ quote_app
 
 You can create it using pgAdmin or the PostgreSQL command-line interface.
 
-For example, connect to PostgreSQL using an administrative account:
+On Linux, PostgreSQL commonly uses Peer Authentication for local administrative connections. To access PostgreSQL as its default administrative user, execute:
 
 ```bash
-psql -U postgres
+sudo -i -u postgres
 ```
 
-Then execute:
+Then open the PostgreSQL command-line interface:
+
+```bash
+psql
+```
+
+You should now be connected as the PostgreSQL administrator.
+
+Next, create a dedicated user for our application:
 
 ```sql
 CREATE ROLE quote_app_user
 WITH LOGIN PASSWORD 'choose-a-local-password';
+```
 
+Then create the database and assign ownership to this user:
+
+```sql
 CREATE DATABASE quote_app
 OWNER quote_app_user;
 ```
@@ -225,7 +236,9 @@ CREATE ROLE quote_app_user
 WITH LOGIN PASSWORD 'choose-a-local-password';
 ```
 
-Creates a database user called `quote_app_user`.
+Creates a PostgreSQL role called `quote_app_user`.
+
+The `LOGIN` attribute allows this role to authenticate and connect to PostgreSQL, while `PASSWORD` specifies the password it must provide.
 
 We will use this account when our Express application connects to PostgreSQL.
 
@@ -236,19 +249,41 @@ CREATE DATABASE quote_app
 OWNER quote_app_user;
 ```
 
-Creates a database named `quote_app` and assigns ownership to our application user.
+Creates a database named `quote_app` and assigns ownership to `quote_app_user`.
 
-We can now connect to the new database:
+This means our application user owns the database and can manage its objects without relying on the PostgreSQL administrative account.
+
+After creating the database, exit the PostgreSQL terminal:
+
+```sql
+\q
+```
+
+Then return to your normal Linux user:
+
+```bash
+exit
+```
+
+We can now connect using the application account:
 
 ```bash
 psql -h localhost -U quote_app_user -d quote_app
 ```
 
+Let's understand the connection options:
+
+- `-h localhost`: Connects to PostgreSQL through the local network interface rather than using a Unix socket.
+- `-U quote_app_user`: Specifies the PostgreSQL username.
+- `-d quote_app`: Specifies the database we want to connect to.
+
 Enter the password when prompted.
+
+**Note:** This connection assumes PostgreSQL allows password authentication for local TCP connections. Its default configuration on many Linux installations supports this.
 
 Alternatively, you can create the role and database through pgAdmin using its graphical interface.
 
-We now have a database ready for our application.
+We now have a database and a dedicated user account ready for our Express application.
 
 ## Connecting Express to PostgreSQL
 
@@ -2795,3 +2830,12 @@ By completing this project, you should understand how to build a server-rendered
 You will have moved beyond temporary JavaScript storage and learned how to create, retrieve, update, and delete persistent records using PostgreSQL.
 
 This knowledge will prepare us for the next workshop, where we will introduce user accounts, authentication, and authorization.
+## References
+
+- [PostgreSQL Documentation](https://www.postgresql.org/docs/current/)
+- [PostgreSQL Tutorial](https://www.postgresqltutorial.com/)
+- [node-postgres (pg) Documentation](https://node-postgres.com/)
+- [node-postgres: Parameterized queries](https://node-postgres.com/features/queries#parameterized-query)
+- [Express: Database integration](https://expressjs.com/en/guide/database-integration.html)
+- [OWASP: SQL Injection Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html)
+- [OWASP: Query Parameterization Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Query_Parameterization_Cheat_Sheet.html)

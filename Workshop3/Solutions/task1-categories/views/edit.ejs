@@ -1,0 +1,60 @@
+<%- include('partials/_header') %>
+<%- include('partials/_navbar') %>
+
+<main id="main">
+  <div class="container container--narrow">
+    <div class="page-head">
+      <div>
+        <span class="eyebrow">Edit</span>
+        <h1>Edit quote</h1>
+        <p>Update the author, category or text, then save your changes.</p>
+      </div>
+      <span class="badge">Quote #<%= quote.id %></span>
+    </div>
+
+    <% const fieldError = (path) => errors.find(error => error.path === path); %>
+    <% const authorError = fieldError('author'); %>
+    <% const categoryError = fieldError('category'); %>
+    <% const contentError = fieldError('content'); %>
+
+    <% if (errors.length > 0) { %>
+      <div class="error-summary" role="alert">
+        <strong>Please fix the following:</strong>
+        <ul><% errors.forEach(error => { %><li><%= error.msg %></li><% }); %></ul>
+      </div>
+    <% } %>
+
+    <form class="form-card" action="/quotes/<%= quote.id %>/edit" method="POST" novalidate>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+      <div class="field">
+        <label for="author">Author name <span class="required" aria-hidden="true">*</span></label>
+        <input type="text" id="author" name="author" value="<%= values.author %>" minlength="3" maxlength="100" autocomplete="name" required
+          <%= authorError ? 'aria-invalid="true" aria-describedby="author-error"' : '' %>>
+        <% if (authorError) { %><p class="field-error" id="author-error"><%= authorError.msg %></p><% } %>
+      </div>
+
+      <div class="field">
+        <label for="category">Category <span class="required" aria-hidden="true">*</span></label>
+        <select id="category" name="category" required <%= categoryError ? 'aria-invalid="true" aria-describedby="category-error"' : '' %>>
+          <% categories.forEach(c => { %><option value="<%= c %>" <%= values.category === c ? 'selected' : '' %>><%= c %></option><% }); %>
+        </select>
+        <% if (categoryError) { %><p class="field-error" id="category-error"><%= categoryError.msg %></p><% } %>
+      </div>
+
+      <div class="field">
+        <label for="content">Quote <span class="required" aria-hidden="true">*</span></label>
+        <textarea id="content" name="content" maxlength="300" required
+          <%= contentError ? 'aria-invalid="true" aria-describedby="content-error"' : '' %>><%= values.content %></textarea>
+        <% if (contentError) { %><p class="field-error" id="content-error"><%= contentError.msg %></p><% } else { %><p class="hint">Up to 300 characters.</p><% } %>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit">Save changes</button>
+        <a class="btn btn-secondary" href="/quotes/<%= quote.id %>">Cancel</a>
+      </div>
+    </form>
+  </div>
+</main>
+
+<%- include('partials/_footer') %>

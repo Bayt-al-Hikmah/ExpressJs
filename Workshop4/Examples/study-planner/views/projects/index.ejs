@@ -1,0 +1,80 @@
+<%- include('../partials/_header') %>
+<%- include('../partials/_navbar') %>
+
+<main id="main">
+  <div class="container">
+    <div class="page-head">
+      <div>
+        <span class="eyebrow">Workspace</span>
+        <h1>My projects</h1>
+        <p>Create a project, then add tasks and keep their status up to date.</p>
+      </div>
+      <span class="badge badge--brand"><%= projects.length %> project<%= projects.length === 1 ? '' : 's' %></span>
+    </div>
+
+    <div class="split">
+      <section>
+        <% if (errors.length > 0) { %>
+          <div class="error-summary" role="alert">
+            <strong>Please fix the following:</strong>
+            <ul><% errors.forEach(e => { %><li><%= e.msg %></li><% }); %></ul>
+          </div>
+        <% } %>
+
+        <% if (projects.length > 0) { %>
+          <div class="grid">
+            <% projects.forEach(p => { %>
+              <article class="card">
+                <div class="card-header">
+                  <h2><a href="/projects/<%= p.id %>"><%= p.title %></a></h2>
+                  <form class="inline-form" action="/projects/<%= p.id %>/delete" method="POST" onsubmit="return confirm('Delete this project and all of its tasks?')">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+                  </form>
+                </div>
+                <% if (p.description) { %>
+                  <p><%= p.description %></p>
+                <% } else { %>
+                  <p class="muted">No description yet.</p>
+                <% } %>
+                <div class="card-footer">
+                  <a class="link-arrow" href="/projects/<%= p.id %>">Open project</a>
+                </div>
+              </article>
+            <% }); %>
+          </div>
+        <% } else { %>
+          <div class="empty-state">
+            <span class="empty-icon" aria-hidden="true">+</span>
+            <h3>No projects yet</h3>
+            <p>Create your first project using the form. You can add tasks once it exists.</p>
+          </div>
+        <% } %>
+      </section>
+
+      <aside>
+        <form class="form-card" action="/projects" method="POST" novalidate>
+          <h2>New project</h2>
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+          <div class="field">
+            <label for="title">Title <span class="required" aria-hidden="true">*</span></label>
+            <input id="title" name="title" type="text" value="<%= values.title %>" maxlength="120" required>
+          </div>
+
+          <div class="field">
+            <label for="description">Description</label>
+            <textarea id="description" name="description" maxlength="500"><%= values.description %></textarea>
+            <p class="hint">Optional. A short summary of the project.</p>
+          </div>
+
+          <div class="form-actions">
+            <button class="btn-block" type="submit">Create project</button>
+          </div>
+        </form>
+      </aside>
+    </div>
+  </div>
+</main>
+
+<%- include('../partials/_footer') %>

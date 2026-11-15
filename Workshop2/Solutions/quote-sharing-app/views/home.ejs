@@ -1,0 +1,52 @@
+<%- include('partials/_header') %>
+<%- include('partials/_navbar') %>
+
+<main id="main">
+  <div class="container">
+    <section class="hero">
+      <div class="hero-grid">
+        <div>
+          <span class="eyebrow">Community quotes</span>
+          <h1>Words worth passing on.</h1>
+          <p>Share inspiring quotes and discover what others have posted. Everything is stored in memory, so the collection resets when the server restarts.</p>
+          <div class="hero-actions">
+            <a class="btn" href="/share">Share a quote</a>
+            <a class="btn btn-secondary" href="/search">Search by author</a>
+          </div>
+        </div>
+        <div class="stat-grid">
+          <div class="stat"><span class="stat-value"><%= quotes.length %></span><span class="stat-label">Recent quotes</span></div>
+          <div class="stat"><span class="stat-value">300</span><span class="stat-label">Max characters</span></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="section-head">
+      <h2>Recent quotes</h2>
+      <a class="link-arrow" href="/share">Add yours</a>
+    </div>
+
+    <% if (quotes.length > 0) { %>
+      <div class="quotes-list">
+        <% quotes.forEach(q => { %>
+          <article class="quote-card">
+            <blockquote><%= q.content %></blockquote>
+            <p class="quote-meta">
+              <span class="quote-author">— <%= q.author %></span>
+              <% if (q.createdAt) { %><span aria-hidden="true">·</span><small><%= new Date(q.createdAt).toLocaleDateString() %></small><% } %>
+            </p>
+          </article>
+        <% }); %>
+      </div>
+    <% } else { %>
+      <div class="empty-state">
+        <span class="empty-icon" aria-hidden="true">&#8220;</span>
+        <h3>No quotes yet</h3>
+        <p>Be the first to add something worth reading.</p>
+        <a class="btn btn-sm" href="/share">Share the first quote</a>
+      </div>
+    <% } %>
+  </div>
+</main>
+
+<%- include('partials/_footer') %>

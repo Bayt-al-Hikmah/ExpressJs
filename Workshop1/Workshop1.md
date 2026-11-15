@@ -1222,3 +1222,12 @@ GET /api/profile/Alice
 ```
 
 Register your middleware using `app.use()` so that it runs for all incoming routes.
+## References
+
+- [Node.js Documentation](https://nodejs.org/docs/latest/api/)
+- [Express Documentation](https://expressjs.com/)
+- [Express: Routing](https://expressjs.com/en/guide/routing.html)
+- [Express: Writing Middleware](https://expressjs.com/en/guide/writing-middleware.html)
+- [MDN: An overview of HTTP](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Overview)
+- [MDN: HTTP request methods](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods)
+- [MDN: HTTP response status codes](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status)

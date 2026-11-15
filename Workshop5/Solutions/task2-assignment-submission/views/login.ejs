@@ -1,0 +1,40 @@
+<%- include('partials/_header', { title: 'Log in' }) %>
+<%- include('partials/_navbar') %>
+
+<main id="main">
+  <div class="container">
+    <div class="auth-wrap">
+      <section class="auth-card">
+        <span class="eyebrow">Welcome back</span>
+        <h1>Log in</h1>
+        <p class="auth-sub">Sign in to view assignments and hand in your work.</p>
+
+        <% if (error) { %>
+          <div class="alert alert--error" role="alert"><span aria-hidden="true">!</span><div><%= error %></div></div>
+        <% } %>
+
+        <form method="POST" action="/login" novalidate>
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+          <div class="field">
+            <label for="username">Username</label>
+            <input id="username" name="username" type="text" autocomplete="username" required autofocus>
+          </div>
+
+          <div class="field">
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required>
+          </div>
+
+          <div class="form-actions">
+            <button class="btn-block" type="submit">Log in</button>
+          </div>
+        </form>
+
+        <p class="auth-footer">No account? <a href="/register">Create one</a></p>
+      </section>
+    </div>
+  </div>
+</main>
+
+<%- include('partials/_footer') %>

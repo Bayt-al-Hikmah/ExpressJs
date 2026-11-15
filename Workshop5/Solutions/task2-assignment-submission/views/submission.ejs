@@ -1,0 +1,79 @@
+<%- include('partials/_header', { title: sub.title }) %>
+<%- include('partials/_navbar') %>
+
+<main id="main">
+  <div class="container">
+    <nav aria-label="Breadcrumb">
+      <p class="muted mb-0"><a href="/assignments">Assignments</a> <span aria-hidden="true">/</span> <%= sub.title %></p>
+    </nav>
+
+    <div class="page-head">
+      <div>
+        <span class="eyebrow">Submission</span>
+        <h1><%= sub.title %></h1>
+        <p>For <strong><%= sub.assignment.title %></strong></p>
+      </div>
+      <span class="badge badge--brand"><%= sub.files.length %> file<%= sub.files.length === 1 ? '' : 's' %></span>
+    </div>
+
+    <% if (sub.description) { %>
+      <p><%= sub.description %></p>
+    <% } %>
+
+    <div class="split">
+      <section>
+        <div class="section-head" style="margin-top:0">
+          <h2>Uploaded files</h2>
+        </div>
+
+        <% if (sub.files.length > 0) { %>
+          <ul class="list">
+            <% sub.files.forEach(f => { %>
+              <li class="list-item">
+                <div class="list-item-main">
+                  <p class="list-item-title"><a href="/files/<%= f.id %>"><%= f.originalName %></a></p>
+                  <span class="badge"><%= f.mimeType %></span>
+                  <span class="badge"><%= Math.max(1, Math.round(f.sizeBytes / 1024)) %> KB</span>
+                </div>
+                <div class="cluster">
+                  <a class="btn btn-secondary btn-sm" href="/files/<%= f.id %>">Download</a>
+                  <form action="/files/<%= f.id %>/delete" method="POST" onsubmit="return confirm('Delete this file?')">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+                  </form>
+                </div>
+              </li>
+            <% }); %>
+          </ul>
+        <% } else { %>
+          <div class="empty-state">
+            <span class="empty-icon" aria-hidden="true">&#128196;</span>
+            <h3>No files uploaded</h3>
+            <p>Use the upload form on the right to attach your work.</p>
+          </div>
+        <% } %>
+      </section>
+
+      <aside>
+        <form class="form-card" action="/submissions/<%= sub.id %>/files" method="POST" enctype="multipart/form-data" novalidate>
+          <h2>Upload files</h2>
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+          <div class="field">
+            <label for="files">Choose files <span class="required" aria-hidden="true">*</span></label>
+            <input id="files" type="file" name="files" accept="application/pdf,image/jpeg,image/png,text/plain" multiple required>
+            <p class="hint">Up to 3 files, 10 MB each. PDF, JPEG, PNG or plain text.</p>
+          </div>
+
+          <div class="form-actions">
+            <button class="btn-block" type="submit">Upload files</button>
+          </div>
+        </form>
+
+        <p class="muted mt-2"><small><a href="/assignments">&larr; Back to assignments</a></small></p>
+      </aside>
+    </div>
+  </div>
+</main>
+
+<%- include('partials/_footer') %>

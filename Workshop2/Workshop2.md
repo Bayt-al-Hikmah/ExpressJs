@@ -2743,3 +2743,12 @@ By completing this project, you should be able to build a small server-rendered 
 You will combine routing, middleware, static files, dynamic templates, reusable components, form processing, validation, and CSRF protection into one practical application.
 
 This project will also prepare you for the next step: connecting our Express application to a real database so that submitted information can be stored permanently.
+## References
+
+- [EJS Documentation](https://ejs.co/#docs)
+- [Express: Using Template Engines](https://expressjs.com/en/guide/using-template-engines.html)
+- [Express: Serving static files](https://expressjs.com/en/starter/static-files.html)
+- [express-validator Documentation](https://express-validator.github.io/docs/)
+- [express-session Documentation](https://expressjs.com/en/resources/middleware/session.html)
+- [csrf-sync (npm)](https://www.npmjs.com/package/csrf-sync)
+- [OWASP: Cross-Site Request Forgery Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html)

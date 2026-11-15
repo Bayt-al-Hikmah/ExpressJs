@@ -1,0 +1,38 @@
+generator client {
+  provider            = "prisma-client-js"
+  output              = "../generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db { 
+  provider = "postgresql" 
+}
+
+enum ReadingStatus { 
+  TO_READ 
+  READING 
+  COMPLETED 
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique @db.VarChar(25)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  books        Book[]
+  @@map("users")
+}
+
+model Book {
+  id          Int           @id @default(autoincrement())
+  title       String        @db.VarChar(150)
+  author      String        @db.VarChar(100)
+  description String?       @db.Text
+  status      ReadingStatus @default(TO_READ)
+  dateAdded   DateTime      @default(now()) @map("date_added") @db.Timestamptz(6)
+  userId      Int           @map("user_id")
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@map("books")
+}

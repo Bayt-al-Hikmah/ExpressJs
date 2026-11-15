@@ -1,0 +1,100 @@
+<%- include('partials/_header', { title: event.title }) %>
+<%- include('partials/_navbar') %>
+
+<main id="main">
+  <div class="container">
+    <nav aria-label="Breadcrumb">
+      <p class="muted mb-0"><a href="/events">Events</a> <span aria-hidden="true">/</span> <%= event.title %></p>
+    </nav>
+
+    <div class="page-head">
+      <div>
+        <span class="eyebrow">Event gallery</span>
+        <h1><%= event.title %></h1>
+        <p><%= event.location %> · <%= new Date(event.date).toLocaleString() %></p>
+      </div>
+      <span class="badge badge--brand"><%= event.media.length %> photo<%= event.media.length === 1 ? '' : 's' %></span>
+    </div>
+
+    <% if (event.description) { %>
+      <p><%= event.description %></p>
+    <% } %>
+
+    <ul class="meta">
+      <li><strong>Organiser:</strong> <%= event.organiser.username %></li>
+      <li><strong>Date:</strong> <%= new Date(event.date).toLocaleString() %></li>
+    </ul>
+
+    <div class="split mt-2">
+      <section>
+        <div class="section-head" style="margin-top:0">
+          <h2>Gallery</h2>
+        </div>
+
+        <% if (event.media.length > 0) { %>
+          <div class="gallery">
+            <% event.media.forEach(m => { %>
+              <figure class="media-item">
+                <img src="/media/<%= m.id %>/file" alt="<%= m.caption || event.title %>" loading="lazy">
+                <figcaption>
+                  <span class="badge"><%= m.originalName %></span>
+                  <% if (m.caption) { %><span class="muted"><%= m.caption %></span><% } %>
+                </figcaption>
+                <% if (currentUser && event.organiserId === currentUser.id) { %>
+                  <div class="media-actions">
+                    <form action="/media/<%= m.id %>/delete" method="POST" onsubmit="return confirm('Delete this photo?')">
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                      <button class="btn btn-danger btn-sm" type="submit">Delete photo</button>
+                    </form>
+                  </div>
+                <% } %>
+              </figure>
+            <% }); %>
+          </div>
+        <% } else { %>
+          <div class="empty-state">
+            <span class="empty-icon" aria-hidden="true">&#128247;</span>
+            <h3>No photos yet</h3>
+            <p>This gallery is empty. The organiser can upload the first photos.</p>
+          </div>
+        <% } %>
+      </section>
+
+      <aside>
+        <% if (currentUser && event.organiserId === currentUser.id) { %>
+          <form class="form-card" action="/events/<%= event.id %>/media" method="POST" enctype="multipart/form-data" novalidate>
+            <h2>Upload photos</h2>
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+            <div class="field">
+              <label for="images">Choose images <span class="required" aria-hidden="true">*</span></label>
+              <input id="images" type="file" name="images" accept="image/jpeg,image/png,image/webp" multiple required>
+              <p class="hint">Up to 5 images, 8 MB each. JPEG, PNG or WebP.</p>
+            </div>
+
+            <div class="field">
+              <label for="caption">Caption</label>
+              <input id="caption" name="caption" type="text" maxlength="200" placeholder="Optional caption for these photos">
+            </div>
+
+            <div class="form-actions">
+              <button class="btn-block" type="submit">Upload photos</button>
+            </div>
+          </form>
+        <% } else { %>
+          <div class="card">
+            <h2>About this event</h2>
+            <p>Only the organiser can upload or delete photos in this gallery.</p>
+            <% if (!currentUser) { %>
+              <a class="btn btn-sm" href="/login">Log in</a>
+            <% } %>
+          </div>
+        <% } %>
+
+        <p class="muted mt-2"><small><a href="/events">&larr; Back to all events</a></small></p>
+      </aside>
+    </div>
+  </div>
+</main>
+
+<%- include('partials/_footer') %>

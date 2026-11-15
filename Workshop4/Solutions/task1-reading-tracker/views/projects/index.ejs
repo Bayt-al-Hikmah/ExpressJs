@@ -1,0 +1,105 @@
+<%- include('../partials/_header') %>
+<%- include('../partials/_navbar') %>
+
+<main id="main">
+  <div class="container">
+    <div class="page-head">
+      <div>
+        <span class="eyebrow">Reading tracker</span>
+        <h1>My books</h1>
+        <p>Track what you want to read, what you are reading, and what you have finished.</p>
+      </div>
+      <span class="badge badge--brand"><%= books.length %> book<%= books.length === 1 ? '' : 's' %></span>
+    </div>
+
+    <div class="split">
+      <section>
+        <% if (errors.length > 0) { %>
+          <div class="error-summary" role="alert">
+            <strong>Please fix the following:</strong>
+            <ul><% errors.forEach(e => { %><li><%= e.msg %></li><% }); %></ul>
+          </div>
+        <% } %>
+
+        <% if (books.length > 0) { %>
+          <div class="grid">
+            <% books.forEach(b => { %>
+              <article class="card">
+                <div class="card-header">
+                  <div>
+                    <h2 class="mb-0"><%= b.title %></h2>
+                    <p class="muted mb-0">by <%= b.author %></p>
+                  </div>
+                  <% if (b.status === 'COMPLETED') { %>
+                    <span class="badge badge--success">Completed</span>
+                  <% } else if (b.status === 'READING') { %>
+                    <span class="badge badge--warning">Reading</span>
+                  <% } else { %>
+                    <span class="badge">To read</span>
+                  <% } %>
+                </div>
+
+                <% if (b.description) { %><p><%= b.description %></p><% } %>
+                <p class="muted"><small>Added <%= new Date(b.dateAdded).toLocaleDateString() %></small></p>
+
+                <div class="card-footer">
+                  <div class="cluster">
+                    <form class="inline-form" action="/projects/<%= b.id %>/status" method="POST">
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                      <label class="visually-hidden" for="book-status-<%= b.id %>">Status for <%= b.title %></label>
+                      <select id="book-status-<%= b.id %>" name="status">
+                        <option value="TO_READ" <%= b.status === 'TO_READ' ? 'selected' : '' %>>To read</option>
+                        <option value="READING" <%= b.status === 'READING' ? 'selected' : '' %>>Reading</option>
+                        <option value="COMPLETED" <%= b.status === 'COMPLETED' ? 'selected' : '' %>>Completed</option>
+                      </select>
+                      <button class="btn btn-secondary btn-sm" type="submit">Update</button>
+                    </form>
+                    <form class="inline-form" action="/projects/<%= b.id %>/delete" method="POST" onsubmit="return confirm('Remove this book from your tracker?')">
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                      <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+                    </form>
+                  </div>
+                </div>
+              </article>
+            <% }); %>
+          </div>
+        <% } else { %>
+          <div class="empty-state">
+            <span class="empty-icon" aria-hidden="true">+</span>
+            <h3>No books yet</h3>
+            <p>Add the first book to your tracker using the form on the right.</p>
+          </div>
+        <% } %>
+      </section>
+
+      <aside>
+        <form class="form-card" action="/projects" method="POST" novalidate>
+          <h2>Add a book</h2>
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+          <div class="field">
+            <label for="title">Title <span class="required" aria-hidden="true">*</span></label>
+            <input id="title" name="title" type="text" value="<%= values.title %>" maxlength="160" required>
+          </div>
+
+          <div class="field">
+            <label for="author">Author <span class="required" aria-hidden="true">*</span></label>
+            <input id="author" name="author" type="text" value="<%= values.author %>" maxlength="120" required>
+          </div>
+
+          <div class="field">
+            <label for="description">Notes</label>
+            <textarea id="description" name="description" maxlength="500"><%= values.description %></textarea>
+            <p class="hint">Optional. Why do you want to read it?</p>
+          </div>
+
+          <div class="form-actions">
+            <button class="btn-block" type="submit">Add book</button>
+          </div>
+        </form>
+      </aside>
+    </div>
+  </div>
+</main>
+
+<%- include('../partials/_footer') %>

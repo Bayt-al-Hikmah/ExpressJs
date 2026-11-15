@@ -1,0 +1,69 @@
+<%- include('partials/_header', { title }) %>
+<%- include('partials/_navbar') %>
+
+<main id="main">
+  <div class="container container--narrow">
+    <div class="page-head">
+      <div>
+        <span class="eyebrow">Step 3 · CSRF protected</span>
+        <h1>Contact us</h1>
+        <p>Same validation, plus a hidden CSRF token so only this site can submit the form.</p>
+      </div>
+      <span class="badge badge--success">Protected</span>
+    </div>
+
+    <% const fieldError = (path) => errors.find(error => error.path === path); %>
+    <% const nameError = fieldError('name'); %>
+    <% const emailError = fieldError('email'); %>
+    <% const messageError = fieldError('message'); %>
+
+    <% if (submittedName && errors.length === 0) { %>
+      <div class="alert alert--success" role="status">
+        <span aria-hidden="true">&#10003;</span>
+        <div><strong>Thanks for your message, <%= submittedName %>!</strong><br>Your message was verified and received.</div>
+      </div>
+    <% } %>
+
+    <% if (errors.length > 0) { %>
+      <div class="error-summary" role="alert">
+        <strong>Please fix the following:</strong>
+        <ul>
+          <% errors.forEach(error => { %><li><%= error.msg %></li><% }); %>
+        </ul>
+      </div>
+    <% } %>
+
+    <form class="form-card" method="POST" action="/contact_csrf" novalidate>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+      <div class="field">
+        <label for="name">Name <span class="required" aria-hidden="true">*</span></label>
+        <input type="text" id="name" name="name" value="<%= values.name %>" autocomplete="name" minlength="3" maxlength="25" required
+          <%= nameError ? 'aria-invalid="true" aria-describedby="name-error"' : '' %>>
+        <% if (nameError) { %><p class="field-error" id="name-error"><%= nameError.msg %></p><% } else { %><p class="hint">Between 3 and 25 characters.</p><% } %>
+      </div>
+
+      <div class="field">
+        <label for="email">Email <span class="required" aria-hidden="true">*</span></label>
+        <input type="email" id="email" name="email" value="<%= values.email %>" autocomplete="email" required
+          <%= emailError ? 'aria-invalid="true" aria-describedby="email-error"' : '' %>>
+        <% if (emailError) { %><p class="field-error" id="email-error"><%= emailError.msg %></p><% } else { %><p class="hint">We will only use this to reply.</p><% } %>
+      </div>
+
+      <div class="field">
+        <label for="message">Message <span class="required" aria-hidden="true">*</span></label>
+        <textarea id="message" name="message" minlength="10" maxlength="200" required
+          <%= messageError ? 'aria-invalid="true" aria-describedby="message-error"' : '' %>><%= values.message %></textarea>
+        <% if (messageError) { %><p class="field-error" id="message-error"><%= messageError.msg %></p><% } else { %><p class="hint">Between 10 and 200 characters.</p><% } %>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit">Send secure message</button>
+        <a class="btn btn-secondary" href="/contact_csrf">Reset</a>
+      </div>
+      <p class="hint"><small>A hidden <code>_csrf</code> token is submitted with the form and checked on the server.</small></p>
+    </form>
+  </div>
+</main>
+
+<%- include('partials/_footer') %>

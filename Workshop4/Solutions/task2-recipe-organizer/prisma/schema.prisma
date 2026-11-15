@@ -1,0 +1,50 @@
+generator client {
+  provider            = "prisma-client-js"
+  output              = "../generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db { 
+  provider = "postgresql" 
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique @db.VarChar(25)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  recipes      Recipe[]
+  @@map("users")
+}
+
+model Recipe {
+  id              Int                @id @default(autoincrement())
+  name            String             @db.VarChar(120)
+  description     String?            @db.Text
+  preparationTime Int                @map("preparation_time")
+  instructions    String             @db.Text
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  userId          Int                @map("user_id")
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ingredients     RecipeIngredient[]
+  @@index([userId])
+  @@map("recipes")
+}
+
+model Ingredient {
+  id      Int                @id @default(autoincrement())
+  name    String             @unique @db.VarChar(80)
+  recipes RecipeIngredient[]
+  @@map("ingredients")
+}
+
+model RecipeIngredient {
+  recipeId     Int        @map("recipe_id")
+  ingredientId Int        @map("ingredient_id")
+  quantity     String     @db.VarChar(60)
+  recipe       Recipe     @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  @@id([recipeId, ingredientId])
+  @@map("recipe_ingredients")
+}

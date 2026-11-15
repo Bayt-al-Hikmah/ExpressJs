@@ -1,0 +1,52 @@
+<%- include('partials/_header') %>
+<%- include('partials/_navbar') %>
+
+<main id="main">
+  <div class="container container--narrow">
+    <div class="page-head">
+      <div>
+        <span class="eyebrow">Find a favourite</span>
+        <h1>Search quotes</h1>
+        <p>Filter the collection by author name. Matching is case-insensitive.</p>
+      </div>
+    </div>
+
+    <form class="form-card" action="/search" method="GET" role="search">
+      <div class="field">
+        <label for="author">Author name</label>
+        <input id="author" name="author" type="search" value="<%= author %>" placeholder="e.g. Maya Angelou" autocomplete="off">
+        <p class="hint">Leave empty to see the search results state.</p>
+      </div>
+      <div class="form-actions">
+        <button type="submit">Search</button>
+        <% if (author) { %><a class="btn btn-secondary" href="/search">Clear</a><% } %>
+      </div>
+    </form>
+
+    <% if (searched) { %>
+      <div class="section-head">
+        <h2>Results</h2>
+        <span class="badge badge--brand"><%= quotes.length %> found</span>
+      </div>
+
+      <% if (quotes.length > 0) { %>
+        <div class="quotes-list">
+          <% quotes.forEach(q => { %>
+            <article class="quote-card">
+              <blockquote><%= q.content %></blockquote>
+              <p class="quote-meta"><span class="quote-author">— <%= q.author %></span></p>
+            </article>
+          <% }); %>
+        </div>
+      <% } else { %>
+        <div class="empty-state">
+          <span class="empty-icon" aria-hidden="true">?</span>
+          <h3>No quotes found</h3>
+          <p>No authors match “<%= author %>”. Try a different name or <a href="/search">clear the search</a>.</p>
+        </div>
+      <% } %>
+    <% } %>
+  </div>
+</main>
+
+<%- include('partials/_footer') %>

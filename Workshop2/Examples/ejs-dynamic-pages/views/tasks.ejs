@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Task list rendered with an EJS loop.">
+  <title>My Tasks · EJS Demo</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="/">
+        <span class="brand-mark" aria-hidden="true">EJS</span>
+        <span>Dynamic Pages</span>
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a class="nav-link" href="/">Home</a></li>
+          <li><a class="nav-link" href="/profile/alice">Profile</a></li>
+          <li><a class="nav-link" href="/dashboard/admin">Dashboard</a></li>
+          <li><a class="nav-link" href="/tasks" aria-current="page">Tasks</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="container container--narrow">
+      <div class="page-head">
+        <div>
+          <span class="eyebrow">Array loop</span>
+          <h1>My to-do list</h1>
+          <p><%= tasks.length %> task<%= tasks.length === 1 ? '' : 's' %> rendered from an in-memory array.</p>
+        </div>
+        <% if (tasks.length > 0) { %>
+          <span class="badge badge--brand"><%= tasks.length %> open</span>
+        <% } %>
+      </div>
+
+      <% if (tasks.length > 0) { %>
+        <ul class="list">
+          <% tasks.forEach(task => { %>
+            <li class="list-item">
+              <span class="list-item-main"><%= task %></span>
+              <span class="badge badge--warning">To do</span>
+            </li>
+          <% }); %>
+        </ul>
+        <p class="muted mt-2"><small>This demo list is read-only. In a real app, each row would have its own controls.</small></p>
+      <% } else { %>
+        <div class="empty-state">
+          <span class="empty-icon" aria-hidden="true">&#10003;</span>
+          <h3>You have no tasks</h3>
+          <p>Great job! Everything is done. New tasks will appear here.</p>
+        </div>
+      <% } %>
+
+      <div class="btn-row mt-2">
+        <a class="btn btn-secondary" href="/">&larr; Back home</a>
+        <a class="btn btn-secondary" href="/profile/alice">View profile</a>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <p>&copy; 2026 Express Workshop · EJS Demo</p>
+      <p>Built with Express and EJS</p>
+    </div>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,98 @@
+<%- include('../partials/_header') %>
+<%- include('../partials/_navbar') %>
+
+<main id="main">
+  <div class="container">
+    <div class="page-head">
+      <div>
+        <span class="eyebrow">Your journeys</span>
+        <h1>My travel journal</h1>
+        <p>Create a trip, add entries, then attach photos and videos to each entry.</p>
+      </div>
+      <span class="badge badge--brand"><%= trips.length %> trip<%= trips.length === 1 ? '' : 's' %></span>
+    </div>
+
+    <div class="split">
+      <section>
+        <% if (trips.length > 0) { %>
+          <div class="grid">
+            <% trips.forEach(trip => { %>
+              <article class="card">
+                <div class="card-header">
+                  <div>
+                    <h2 class="mb-0"><%= trip.title %></h2>
+                    <p class="muted mb-0"><%= trip.destination || 'No destination set' %></p>
+                  </div>
+                  <span class="badge"><%= trip.entries.length %> entr<%= trip.entries.length === 1 ? 'y' : 'ies' %></span>
+                </div>
+
+                <% if (trip.entries.length > 0) { %>
+                  <h3>Entries</h3>
+                  <ul class="list">
+                    <% trip.entries.forEach(e => { %>
+                      <li class="list-item">
+                        <a class="list-item-main list-item-title" href="/entries/<%= e.id %>"><%= e.title %></a>
+                        <span class="badge badge--brand">Open</span>
+                      </li>
+                    <% }); %>
+                  </ul>
+                <% } else { %>
+                  <p class="muted">No entries yet. Add the first entry below.</p>
+                <% } %>
+
+                <div class="card-footer">
+                  <form action="/trips/<%= trip.id %>/entries" method="POST" novalidate>
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <h3>Add an entry</h3>
+                    <div class="form-grid form-grid--two">
+                      <div class="field">
+                        <label for="entry-title-<%= trip.id %>">Entry title <span class="required" aria-hidden="true">*</span></label>
+                        <input id="entry-title-<%= trip.id %>" name="title" type="text" maxlength="120" required>
+                      </div>
+                      <div class="field">
+                        <label for="entry-story-<%= trip.id %>">Story</label>
+                        <textarea id="entry-story-<%= trip.id %>" name="story" maxlength="2000"></textarea>
+                      </div>
+                    </div>
+                    <div class="form-actions">
+                      <button class="btn btn-sm" type="submit">Add entry</button>
+                    </div>
+                  </form>
+                </div>
+              </article>
+            <% }); %>
+          </div>
+        <% } else { %>
+          <div class="empty-state">
+            <span class="empty-icon" aria-hidden="true">&#9992;</span>
+            <h3>No trips yet</h3>
+            <p>Create your first trip using the form on the right. You can add entries once it exists.</p>
+          </div>
+        <% } %>
+      </section>
+
+      <aside>
+        <form class="form-card" action="/trips" method="POST" novalidate>
+          <h2>Create a trip</h2>
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+          <div class="field">
+            <label for="trip-title">Trip name <span class="required" aria-hidden="true">*</span></label>
+            <input id="trip-title" name="title" type="text" maxlength="100" required>
+          </div>
+
+          <div class="field">
+            <label for="destination">Destination</label>
+            <input id="destination" name="destination" type="text" maxlength="120">
+          </div>
+
+          <div class="form-actions">
+            <button class="btn-block" type="submit">Create trip</button>
+          </div>
+        </form>
+      </aside>
+    </div>
+  </div>
+</main>
+
+<%- include('../partials/_footer') %>

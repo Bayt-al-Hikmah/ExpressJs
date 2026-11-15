@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Profile page rendered with EJS variables.">
+  <title>Profile · EJS Demo</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="/">
+        <span class="brand-mark" aria-hidden="true">EJS</span>
+        <span>Dynamic Pages</span>
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a class="nav-link" href="/">Home</a></li>
+          <li><a class="nav-link" href="/profile/alice" aria-current="page">Profile</a></li>
+          <li><a class="nav-link" href="/dashboard/admin">Dashboard</a></li>
+          <li><a class="nav-link" href="/tasks">Tasks</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="container container--narrow">
+      <% const displayName = user.username.charAt(0).toUpperCase() + user.username.slice(1); %>
+      <div class="page-head">
+        <div>
+          <span class="eyebrow">User profile</span>
+          <h1>Hello, <%= displayName %>!</h1>
+          <p>A page rendered from route parameters and a user object.</p>
+        </div>
+      </div>
+
+      <section class="card">
+        <div class="card-header">
+          <div class="cluster">
+            <span class="avatar" style="width:44px;height:44px;font-size:1rem" aria-hidden="true"><%= user.username.charAt(0) %></span>
+            <div>
+              <h2 class="mb-0"><%= displayName %></h2>
+              <p class="muted mb-0">@<%= user.username %></p>
+            </div>
+          </div>
+          <span class="badge badge--brand">Member</span>
+        </div>
+        <p><em><%= user.bio %></em></p>
+
+        <h3>Shopping list</h3>
+        <% if (user.shoppingList.length > 0) { %>
+          <ul class="list">
+            <% user.shoppingList.forEach(item => { %>
+              <li class="list-item">
+                <span class="list-item-main"><%= item %></span>
+                <span class="badge">To buy</span>
+              </li>
+            <% }); %>
+          </ul>
+        <% } else { %>
+          <div class="empty-state">
+            <span class="empty-icon" aria-hidden="true">&#10003;</span>
+            <h3>Your shopping list is empty</h3>
+            <p>Add a few items and they will appear here.</p>
+          </div>
+        <% } %>
+      </section>
+
+      <div class="btn-row mt-2">
+        <a class="btn btn-secondary" href="/">&larr; Back home</a>
+        <a class="btn" href="/tasks">View tasks</a>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <p>&copy; 2026 Express Workshop · EJS Demo</p>
+      <p>Built with Express and EJS</p>
+    </div>
+  </footer>
+</body>
+</html>

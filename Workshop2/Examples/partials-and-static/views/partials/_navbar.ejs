@@ -1,0 +1,17 @@
+<header class="site-header">
+  <div class="container header-inner">
+    <a class="brand" href="/">
+      <img class="brand-logo" src="/images/logo.svg" alt="">
+      <span>Acme Studio</span>
+    </a>
+    <nav aria-label="Main navigation">
+      <ul class="nav-links">
+        <li><a class="nav-link" href="/" <%= title === 'Home' ? 'aria-current="page"' : '' %>>Home</a></li>
+        <li><a class="nav-link" href="/about" <%= title === 'About' ? 'aria-current="page"' : '' %>>About</a></li>
+      </ul>
+    </nav>
+    <div class="header-actions">
+      <a class="btn btn-sm" href="/about">Get in touch</a>
+    </div>
+  </div>
+</header>

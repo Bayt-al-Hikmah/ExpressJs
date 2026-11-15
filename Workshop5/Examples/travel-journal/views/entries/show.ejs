@@ -1,0 +1,103 @@
+<%- include('../partials/_header') %>
+<%- include('../partials/_navbar') %>
+
+<main id="main">
+  <div class="container">
+    <nav aria-label="Breadcrumb">
+      <p class="muted mb-0"><a href="/trips">Trips</a> <span aria-hidden="true">/</span> <%= entry.title %></p>
+    </nav>
+
+    <div class="page-head">
+      <div>
+        <span class="eyebrow">Journal entry</span>
+        <h1><%= entry.title %></h1>
+        <p><%= entry.story || 'No description yet.' %></p>
+      </div>
+      <span class="badge badge--brand"><%= entry.media.length %> media item<%= entry.media.length === 1 ? '' : 's' %></span>
+    </div>
+
+    <div class="split">
+      <section>
+        <div class="section-head" style="margin-top:0">
+          <h2>Media</h2>
+        </div>
+
+        <% if (entry.media.length > 0) { %>
+          <div class="gallery">
+            <% entry.media.forEach(m => { %>
+              <figure class="media-item">
+                <% if (m.kind === 'IMAGE') { %>
+                  <img src="/media/<%= m.id %>" alt="<%= m.caption || 'Trip photo' %>">
+                <% } else { %>
+                  <video controls preload="metadata">
+                    <source src="/media/<%= m.id %>" type="<%= m.mimeType %>">
+                    Your browser does not support the video tag.
+                  </video>
+                <% } %>
+                <% if (m.caption) { %><figcaption><%= m.caption %></figcaption><% } %>
+                <div class="media-actions">
+                  <form action="/media/<%= m.id %>/delete" method="POST" onsubmit="return confirm('Delete this media item?')">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+                  </form>
+                </div>
+              </figure>
+            <% }); %>
+          </div>
+        <% } else { %>
+          <div class="empty-state">
+            <span class="empty-icon" aria-hidden="true">&#128247;</span>
+            <h3>No media yet</h3>
+            <p>Upload photographs or a short video using the forms on the right.</p>
+          </div>
+        <% } %>
+      </section>
+
+      <aside>
+        <form class="form-card" action="/entries/<%= entry.id %>/images" method="POST" enctype="multipart/form-data" novalidate>
+          <h2>Upload photographs</h2>
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+          <div class="field">
+            <label for="images">Images <span class="required" aria-hidden="true">*</span></label>
+            <input id="images" type="file" name="images" accept="image/jpeg,image/png,image/webp" multiple required>
+            <p class="hint">JPEG, PNG or WebP. Select more than one if you like.</p>
+          </div>
+
+          <div class="field">
+            <label for="image-caption">Caption</label>
+            <input id="image-caption" name="caption" type="text" maxlength="200">
+          </div>
+
+          <div class="form-actions">
+            <button class="btn-block" type="submit">Upload photos</button>
+          </div>
+        </form>
+
+        <form class="form-card mt-2" action="/entries/<%= entry.id %>/video" method="POST" enctype="multipart/form-data" novalidate>
+          <h2>Upload a video</h2>
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+          <div class="field">
+            <label for="video">Video <span class="required" aria-hidden="true">*</span></label>
+            <input id="video" type="file" name="video" accept="video/mp4" required>
+            <p class="hint">MP4 format.</p>
+          </div>
+
+          <div class="field">
+            <label for="video-caption">Caption</label>
+            <input id="video-caption" name="caption" type="text" maxlength="200">
+          </div>
+
+          <div class="form-actions">
+            <button class="btn-block" type="submit">Upload video</button>
+          </div>
+        </form>
+
+        <p class="muted mt-2"><small><a href="/trips">&larr; Back to trips</a></small></p>
+      </aside>
+    </div>
+  </div>
+</main>
+
+<%- include('../partials/_footer') %>

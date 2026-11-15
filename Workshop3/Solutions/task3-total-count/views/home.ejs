@@ -1,0 +1,57 @@
+<%- include('partials/_header') %>
+<%- include('partials/_navbar') %>
+
+<main id="main">
+  <div class="container">
+    <section class="hero">
+      <div class="hero-grid">
+        <div>
+          <span class="eyebrow">Recent quotes</span>
+          <h1>Discover and share inspiring quotes.</h1>
+          <p>Every quote is stored in PostgreSQL. The counter below comes from a <code>COUNT(*)</code> query.</p>
+          <div class="hero-actions">
+            <a class="btn" href="/share">Share a quote</a>
+            <a class="btn btn-secondary" href="/search">Search quotes</a>
+          </div>
+        </div>
+        <div class="stat-grid">
+          <div class="stat"><span class="stat-value"><%= totalQuotes %></span><span class="stat-label">Total quotes</span></div>
+          <div class="stat"><span class="stat-value"><%= quotes.length %></span><span class="stat-label">Shown here</span></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="section-head">
+      <h2>Recent quotes</h2>
+      <span class="badge badge--brand"><%= totalQuotes %> in total</span>
+    </div>
+
+    <% if (quotes.length > 0) { %>
+      <div class="quotes-list">
+        <% quotes.forEach(quote => { %>
+          <article class="quote-card">
+            <blockquote><%= quote.content %></blockquote>
+            <p class="quote-meta">
+              <span class="quote-author">— <%= quote.author %></span>
+              <span aria-hidden="true">·</span>
+              <small><%= new Date(quote.created_at).toLocaleString() %></small>
+            </p>
+            <div class="card-footer">
+              <a class="link-arrow" href="/quotes/<%= quote.id %>">View quote</a>
+              <a class="btn btn-secondary btn-sm" href="/quotes/<%= quote.id %>/edit">Edit</a>
+            </div>
+          </article>
+        <% }); %>
+      </div>
+    <% } else { %>
+      <div class="empty-state">
+        <span class="empty-icon" aria-hidden="true">&#8220;</span>
+        <h3>No quotes yet</h3>
+        <p>The total is zero. Add the first quote to get started.</p>
+        <a class="btn btn-sm" href="/share">Share the first quote</a>
+      </div>
+    <% } %>
+  </div>
+</main>
+
+<%- include('partials/_footer') %>

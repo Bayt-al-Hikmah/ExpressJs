@@ -1,0 +1,14 @@
+{
+  "name": "pg-connection-example",
+  "version": "1.0.0",
+  "private": true,
+  "main": "app.js",
+  "scripts": {
+    "start": "node -r dotenv/config app.js",
+    "test:db": "node -r dotenv/config db/test-connection.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "pg": "^8.13.1"
+  }
+}

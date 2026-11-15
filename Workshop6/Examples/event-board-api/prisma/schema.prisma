@@ -1,0 +1,53 @@
+generator client {
+  provider            = "prisma-client-js"
+  output              = "../generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db { 
+  provider = "postgresql" 
+}
+
+enum EventStatus { 
+  DRAFT 
+  PUBLISHED 
+}
+enum Category { EDUCATION SOCIAL TECHNOLOGY OTHER }
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique @db.VarChar(120)
+  username     String   @unique @db.VarChar(25)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  events       Event[]
+  @@map("users")
+}
+
+model Event {
+  id          Int          @id @default(autoincrement())
+  title       String       @db.VarChar(120)
+  description String       @db.Text
+  location    String       @db.VarChar(120)
+  startsAt    DateTime     @map("starts_at") @db.Timestamptz(6)
+  category    Category     @default(OTHER)
+  status      EventStatus  @default(DRAFT)
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  organizerId Int          @map("organizer_id")
+  organizer   User         @relation(fields:[organizerId], references:[id], onDelete:Cascade)
+  cover       MediaAsset?
+  @@index([organizerId])
+  @@map("events")
+}
+
+model MediaAsset {
+  id           Int      @id @default(autoincrement())
+  storageName  String   @unique @map("storage_name") @db.VarChar(255)
+  originalName String   @map("original_name") @db.VarChar(180)
+  mimeType     String   @map("mime_type") @db.VarChar(100)
+  sizeBytes    Int      @map("size_bytes")
+  eventId      Int      @unique @map("event_id")
+  event        Event    @relation(fields:[eventId], references:[id], onDelete:Cascade)
+  @@map("media_assets")
+}

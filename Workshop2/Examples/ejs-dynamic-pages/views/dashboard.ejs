@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Role-based dashboard rendered with EJS conditionals.">
+  <title>Dashboard · EJS Demo</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="/">
+        <span class="brand-mark" aria-hidden="true">EJS</span>
+        <span>Dynamic Pages</span>
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a class="nav-link" href="/">Home</a></li>
+          <li><a class="nav-link" href="/profile/alice">Profile</a></li>
+          <li><a class="nav-link" href="/dashboard/admin" aria-current="page">Dashboard</a></li>
+          <li><a class="nav-link" href="/tasks">Tasks</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="container container--narrow">
+      <div class="page-head">
+        <div>
+          <span class="eyebrow">Role-based view</span>
+          <% if (userStatus === 'admin') { %>
+            <h1>Welcome, Administrator!</h1>
+            <p>You have full access to the system controls.</p>
+          <% } else if (userStatus === 'member') { %>
+            <h1>Welcome, Valued Member!</h1>
+            <p>Thank you for being part of our community.</p>
+          <% } else { %>
+            <h1>Welcome, Guest!</h1>
+            <p>Please sign up or log in to access member features.</p>
+          <% } %>
+        </div>
+        <% if (userStatus === 'admin') { %>
+          <span class="badge badge--danger">Admin</span>
+        <% } else if (userStatus === 'member') { %>
+          <span class="badge badge--success">Member</span>
+        <% } else { %>
+          <span class="badge">Guest</span>
+        <% } %>
+      </div>
+
+      <section class="card card--accent">
+        <h2>What you can do</h2>
+        <% if (userStatus === 'admin') { %>
+          <ul class="list">
+            <li class="list-item"><span class="list-item-main">Manage users, content and system settings.</span><span class="badge badge--brand">Full access</span></li>
+            <li class="list-item"><span class="list-item-main">Review activity and audit logs.</span><span class="badge badge--brand">Full access</span></li>
+            <li class="list-item"><span class="list-item-main">Publish announcements to all members.</span><span class="badge badge--brand">Full access</span></li>
+          </ul>
+        <% } else if (userStatus === 'member') { %>
+          <ul class="list">
+            <li class="list-item"><span class="list-item-main">Browse and save community content.</span><span class="badge badge--success">Available</span></li>
+            <li class="list-item"><span class="list-item-main">Update your profile and preferences.</span><span class="badge badge--success">Available</span></li>
+            <li class="list-item"><span class="list-item-main">Manage other users or system settings.</span><span class="badge">Admin only</span></li>
+          </ul>
+        <% } else { %>
+          <ul class="list">
+            <li class="list-item"><span class="list-item-main">Create an account to unlock member features.</span><span class="badge badge--warning">Sign up</span></li>
+            <li class="list-item"><span class="list-item-main">Already registered? Log in to continue.</span><span class="badge badge--warning">Log in</span></li>
+          </ul>
+        <% } %>
+      </section>
+
+      <div class="btn-row mt-2">
+        <a class="btn btn-secondary" href="/">&larr; Back home</a>
+        <% if (userStatus === 'guest') { %>
+          <a class="btn" href="/dashboard/member">Preview member view</a>
+        <% } else { %>
+          <a class="btn" href="/dashboard/admin">Preview admin view</a>
+        <% } %>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <p>&copy; 2026 Express Workshop · EJS Demo</p>
+      <p>Built with Express and EJS</p>
+    </div>
+  </footer>
+</body>
+</html>

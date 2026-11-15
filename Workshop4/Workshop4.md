@@ -216,7 +216,7 @@ Now open `prisma/schema.prisma`:
 
 ```prisma
 generator client {
-  provider            = "prisma-client"
+  provider            = "prisma-client-js"
   output              = "../generated/prisma"
   moduleFormat        = "esm"
   importFileExtension = "ts"
@@ -1526,3 +1526,14 @@ Think about how you would represent the relationship between users and events. A
 Design the Prisma models and implement the required operations.
 
 Also consider how to prevent duplicate registrations and how to restrict event editing to the event's organiser.
+## References
+
+- [Prisma ORM Documentation](https://www.prisma.io/docs/orm)
+- [Prisma: Data model](https://www.prisma.io/docs/orm/prisma-schema/data-model/models)
+- [Prisma: Relations](https://www.prisma.io/docs/orm/prisma-schema/data-model/relations)
+- [Prisma: CRUD](https://www.prisma.io/docs/orm/prisma-client/queries/crud)
+- [Prisma: Migrations](https://www.prisma.io/docs/orm/prisma-migrate)
+- [Argon2 (npm)](https://www.npmjs.com/package/argon2)
+- [OWASP: Password Storage Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)
+- [OWASP: Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html)
+- [OWASP: Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)

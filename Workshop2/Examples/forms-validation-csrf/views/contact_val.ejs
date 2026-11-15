@@ -1,0 +1,67 @@
+<%- include('partials/_header', { title }) %>
+<%- include('partials/_navbar') %>
+
+<main id="main">
+  <div class="container container--narrow">
+    <div class="page-head">
+      <div>
+        <span class="eyebrow">Step 2 · express-validator</span>
+        <h1>Contact us</h1>
+        <p>This form uses <code>express-validator</code>. Errors are shown next to the field that needs attention.</p>
+      </div>
+    </div>
+
+    <% const fieldError = (path) => errors.find(error => error.path === path); %>
+    <% const nameError = fieldError('name'); %>
+    <% const emailError = fieldError('email'); %>
+    <% const messageError = fieldError('message'); %>
+
+    <% if (submittedName && errors.length === 0) { %>
+      <div class="alert alert--success" role="status">
+        <span aria-hidden="true">&#10003;</span>
+        <div><strong>Thanks for your message, <%= submittedName %>!</strong><br>Your details passed validation.</div>
+      </div>
+    <% } %>
+
+    <% if (errors.length > 0) { %>
+      <div class="error-summary" role="alert">
+        <strong>Please fix the following:</strong>
+        <ul>
+          <% errors.forEach(error => { %><li><%= error.msg %></li><% }); %>
+        </ul>
+      </div>
+    <% } %>
+
+    <form class="form-card" action="/contact_val" method="POST" novalidate>
+      <div class="field">
+        <label for="name">Name <span class="required" aria-hidden="true">*</span></label>
+        <input type="text" id="name" name="name" value="<%= values.name %>" autocomplete="name" minlength="3" maxlength="25" required
+          <%= nameError ? 'aria-invalid="true" aria-describedby="name-error"' : '' %>>
+        <% if (nameError) { %><p class="field-error" id="name-error"><%= nameError.msg %></p><% } else { %><p class="hint">Between 3 and 25 characters.</p><% } %>
+      </div>
+
+      <div class="field">
+        <label for="email">Email <span class="required" aria-hidden="true">*</span></label>
+        <input type="email" id="email" name="email" value="<%= values.email %>" autocomplete="email" required
+          <%= emailError ? 'aria-invalid="true" aria-describedby="email-error"' : '' %>>
+        <% if (emailError) { %><p class="field-error" id="email-error"><%= emailError.msg %></p><% } else { %><p class="hint">We will only use this to reply.</p><% } %>
+      </div>
+
+      <div class="field">
+        <label for="message">Message <span class="required" aria-hidden="true">*</span></label>
+        <textarea id="message" name="message" maxlength="200" required
+          <%= messageError ? 'aria-invalid="true" aria-describedby="message-error"' : '' %>><%= values.message %></textarea>
+        <% if (messageError) { %><p class="field-error" id="message-error"><%= messageError.msg %></p><% } else { %><p class="hint">Up to 200 characters.</p><% } %>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit">Send message</button>
+        <a class="btn btn-secondary" href="/contact_val">Reset</a>
+      </div>
+    </form>
+
+    <p class="muted mt-2"><small>Next: add <a href="/contact_csrf">CSRF protection</a> to stop cross-site form submissions.</small></p>
+  </div>
+</main>
+
+<%- include('partials/_footer') %>

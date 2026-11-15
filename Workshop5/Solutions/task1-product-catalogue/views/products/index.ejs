@@ -1,0 +1,66 @@
+<%- include("../partials/_header") %>
+<%- include("../partials/_navbar") %>
+
+<main id="main">
+  <div class="container">
+    <section class="hero">
+      <div class="hero-grid">
+        <div>
+          <span class="eyebrow">Catalogue</span>
+          <h1>Products worth a closer look.</h1>
+          <p>Browse the public catalogue, open a product gallery, or log in to manage your own listings and images.</p>
+          <div class="hero-actions">
+            <% if (currentUser) { %>
+              <a class="btn" href="/products/manage/mine">Manage my products</a>
+            <% } else { %>
+              <a class="btn" href="/login">Log in to manage</a>
+              <a class="btn btn-secondary" href="/register">Create account</a>
+            <% } %>
+          </div>
+        </div>
+        <div class="stat-grid">
+          <div class="stat"><span class="stat-value"><%= products.length %></span><span class="stat-label">Products</span></div>
+          <div class="stat"><span class="stat-value">&#8734;</span><span class="stat-label">Images per product</span></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="section-head">
+      <h2>All products</h2>
+      <span class="badge badge--brand"><%= products.length %> listed</span>
+    </div>
+
+    <% if (products.length > 0) { %>
+      <div class="auto-grid">
+        <% products.forEach(p => { const main = p.images.find(img => img.isMain) || p.images[0]; %>
+          <article class="card product-card">
+            <% if (main) { %>
+              <img class="event-cover" src="/products/images/<%= main.id %>/file" alt="<%= p.name %>">
+            <% } else { %>
+              <div class="event-cover" style="display:grid;place-items:center;color:var(--muted)">No image</div>
+            <% } %>
+            <div class="card-header" style="margin-top:.9rem">
+              <div>
+                <h2 class="mb-0"><a href="/products/<%= p.id %>"><%= p.name %></a></h2>
+                <p class="muted mb-0"><%= p.category %></p>
+              </div>
+              <span class="badge badge--brand">$<%= p.price %></span>
+            </div>
+            <div class="card-footer">
+              <a class="link-arrow" href="/products/<%= p.id %>">View gallery</a>
+            </div>
+          </article>
+        <% }); %>
+      </div>
+    <% } else { %>
+      <div class="empty-state">
+        <span class="empty-icon" aria-hidden="true">+</span>
+        <h3>No products yet</h3>
+        <p>The catalogue is empty. Log in and create the first product.</p>
+        <a class="btn btn-sm" href="/login">Log in to add one</a>
+      </div>
+    <% } %>
+  </div>
+</main>
+
+<%- include("../partials/_footer") %>

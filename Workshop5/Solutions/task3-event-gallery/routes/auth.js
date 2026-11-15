@@ -1,0 +1,8 @@
+import express from "express"; import argon2 from "argon2"; import prisma from "../db/prisma.js"; import { csrfSynchronisedProtection } from "../middleware/csrf.js";
+const router=express.Router();
+router.get('/register',(req,res)=>res.render('auth',{mode:'register',error:null}));
+router.post('/register', csrfSynchronisedProtection, async (req,res,next)=>{try{ const username=(req.body.username||'').trim().toLowerCase(); const pw=req.body.password||''; if(username.length<3||pw.length<12) return res.status(400).render('auth',{mode:'register',error:'Invalid input'}); await prisma.user.create({data:{username,passwordHash:await argon2.hash(pw,{type:argon2.argon2id})}}); res.redirect('/login'); }catch(e){ if(e.code==='P2002') return res.status(409).render('auth',{mode:'register',error:'Username taken'}); next(e);} });
+router.get('/login',(req,res)=>res.render('auth',{mode:'login',error:null}));
+router.post('/login', csrfSynchronisedProtection, async (req,res,next)=>{try{ const u=await prisma.user.findUnique({where:{username:(req.body.username||'').trim().toLowerCase()}}); if(!u||!(await argon2.verify(u.passwordHash,req.body.password||''))) return res.status(401).render('auth',{mode:'login',error:'Invalid credentials'}); req.session.regenerate(err=>{ if(err) return next(err); req.session.user={id:u.id,username:u.username}; req.session.save(e2=>e2?next(e2):res.redirect('/events')); }); }catch(e){next(e);} });
+router.post('/logout', csrfSynchronisedProtection,(req,res,next)=>{ req.session.destroy(()=>{ res.clearCookie('sid',{path:'/'}); res.redirect('/events'); }); });
+export default router;

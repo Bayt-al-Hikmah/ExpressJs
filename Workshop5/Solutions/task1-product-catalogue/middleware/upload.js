@@ -1,0 +1,10 @@
+import multer from "multer";
+import { randomUUID } from "node:crypto";
+import { mkdirSync } from "node:fs";
+import path from "node:path";
+export const mediaDirectory = path.resolve("storage/uploads");
+mkdirSync(mediaDirectory,{recursive:true});
+const storage = multer.diskStorage({ destination:(req,file,cb)=>cb(null,mediaDirectory), filename:(req,file,cb)=>cb(null,randomUUID()) });
+const allowed = new Set(["image/jpeg","image/png","image/webp"]);
+export const uploadImages = multer({ storage, limits:{fileSize:5*1024*1024, files:5, fields:10, parts:15}, fileFilter:(req,file,cb)=> allowed.has(file.mimetype)?cb(null,true):cb(Object.assign(new Error("Unsupported file type."),{code:"UNSUPPORTED_FILE_TYPE"})) }).array("images",5);
+export const uploadOne = multer({ storage, limits:{fileSize:5*1024*1024, files:1, fields:10, parts:11}, fileFilter:(req,file,cb)=> allowed.has(file.mimetype)?cb(null,true):cb(Object.assign(new Error("Unsupported file type."),{code:"UNSUPPORTED_FILE_TYPE"})) }).single("image");

@@ -1,0 +1,113 @@
+<%- include('partials/_header', { title: 'Events' }) %>
+<%- include('partials/_navbar') %>
+
+<main id="main">
+  <div class="container">
+    <section class="hero">
+      <div class="hero-grid">
+        <div>
+          <span class="eyebrow">Community events</span>
+          <h1>Events worth remembering.</h1>
+          <p>Browse upcoming and past events, then open one to view the shared photo gallery. Log in to create an event and upload your own images.</p>
+          <div class="hero-actions">
+            <% if (currentUser) { %>
+              <a class="btn" href="#create-event">Create an event</a>
+            <% } else { %>
+              <a class="btn" href="/login">Log in to contribute</a>
+              <a class="btn btn-secondary" href="/register">Create account</a>
+            <% } %>
+          </div>
+        </div>
+        <div class="stat-grid">
+          <div class="stat"><span class="stat-value"><%= events.length %></span><span class="stat-label">Events</span></div>
+          <div class="stat"><span class="stat-value"><%= events.reduce((sum, e) => sum + e.media.length, 0) %></span><span class="stat-label">Photos shared</span></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="section-head">
+      <h2>All events</h2>
+      <span class="badge badge--brand"><%= events.length %> listed</span>
+    </div>
+
+    <% if (events.length > 0) { %>
+      <div class="auto-grid">
+        <% events.forEach(ev => { const cover = ev.media[0]; %>
+          <article class="card event-card">
+            <% if (cover) { %>
+              <img class="event-cover" src="/media/<%= cover.id %>/file" alt="<%= cover.caption || ev.title %>" loading="lazy">
+            <% } else { %>
+              <div class="event-cover" style="display:grid;place-items:center;color:var(--muted)">No photo yet</div>
+            <% } %>
+            <div class="card-header" style="margin-top:.9rem">
+              <div>
+                <h3><a href="/events/<%= ev.id %>"><%= ev.title %></a></h3>
+                <p class="muted mb-0"><%= ev.location %></p>
+              </div>
+              <span class="badge"><%= ev.media.length %> photo<%= ev.media.length === 1 ? '' : 's' %></span>
+            </div>
+            <% if (ev.description) { %><p class="event-desc"><%= ev.description %></p><% } %>
+            <ul class="meta">
+              <li><strong>Date:</strong> <%= new Date(ev.date).toLocaleString() %></li>
+              <li><strong>Organiser:</strong> <%= ev.organiser.username %></li>
+            </ul>
+            <div class="card-footer">
+              <a class="link-arrow" href="/events/<%= ev.id %>">View gallery</a>
+            </div>
+          </article>
+        <% }); %>
+      </div>
+    <% } else { %>
+      <div class="empty-state">
+        <span class="empty-icon" aria-hidden="true">&#128247;</span>
+        <h3>No events yet</h3>
+        <p>There are no events in the gallery. Log in and create the first one.</p>
+        <a class="btn btn-sm" href="<%= currentUser ? '#create-event' : '/login' %>"><%= currentUser ? 'Create an event' : 'Log in to create one' %></a>
+      </div>
+    <% } %>
+
+    <% if (currentUser) { %>
+      <div class="split mt-2" id="create-event">
+        <section>
+          <div class="section-head" style="margin-top:0">
+            <h2>Create an event</h2>
+          </div>
+          <p class="muted">Add an event and it will appear in the gallery immediately. You can upload photos from the event page after it is created.</p>
+        </section>
+
+        <aside>
+          <form class="form-card" action="/events" method="POST" novalidate>
+            <h2>New event</h2>
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+            <div class="field">
+              <label for="title">Title <span class="required" aria-hidden="true">*</span></label>
+              <input id="title" name="title" type="text" maxlength="120" required>
+            </div>
+
+            <div class="field">
+              <label for="description">Description</label>
+              <textarea id="description" name="description" maxlength="1000"></textarea>
+            </div>
+
+            <div class="field">
+              <label for="location">Location <span class="required" aria-hidden="true">*</span></label>
+              <input id="location" name="location" type="text" maxlength="120" required>
+            </div>
+
+            <div class="field">
+              <label for="date">Date and time <span class="required" aria-hidden="true">*</span></label>
+              <input id="date" name="date" type="datetime-local" required>
+            </div>
+
+            <div class="form-actions">
+              <button class="btn-block" type="submit">Create event</button>
+            </div>
+          </form>
+        </aside>
+      </div>
+    <% } %>
+  </div>
+</main>
+
+<%- include('partials/_footer') %>

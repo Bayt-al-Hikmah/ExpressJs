@@ -1,0 +1,99 @@
+<%- include('partials/_header', { title: 'Assignments' }) %>
+<%- include('partials/_navbar') %>
+
+<main id="main">
+  <div class="container">
+    <div class="page-head">
+      <div>
+        <span class="eyebrow">Coursework</span>
+        <h1>Assignments</h1>
+        <p>Start a submission from an assignment, then upload up to three files on the submission page.</p>
+      </div>
+      <span class="badge badge--brand"><%= assignments.length %> assignment<%= assignments.length === 1 ? '' : 's' %></span>
+    </div>
+
+    <div class="split">
+      <section>
+        <div class="section-head" style="margin-top:0">
+          <h2>Open assignments</h2>
+        </div>
+
+        <% if (assignments.length > 0) { %>
+          <div class="grid">
+            <% assignments.forEach(a => { %>
+              <article class="card">
+                <div class="card-header">
+                  <div>
+                    <h2 class="mb-0"><%= a.title %></h2>
+                    <% if (a.description) { %><p class="muted mb-0"><%= a.description %></p><% } %>
+                  </div>
+                  <span class="badge">Assignment #<%= a.id %></span>
+                </div>
+
+                <form action="/submissions" method="POST" novalidate>
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                  <input type="hidden" name="assignmentId" value="<%= a.id %>">
+
+                  <div class="field">
+                    <label for="submission-title-<%= a.id %>">Submission title <span class="required" aria-hidden="true">*</span></label>
+                    <input id="submission-title-<%= a.id %>" name="title" type="text" maxlength="120" placeholder="e.g. Week 3 – finished" required>
+                  </div>
+
+                  <div class="form-actions">
+                    <button class="btn btn-sm" type="submit">Start submission</button>
+                  </div>
+                </form>
+              </article>
+            <% }); %>
+          </div>
+        <% } else { %>
+          <div class="empty-state">
+            <span class="empty-icon" aria-hidden="true">+</span>
+            <h3>No assignments yet</h3>
+            <p>There is nothing to submit right now. Check back later.</p>
+          </div>
+        <% } %>
+      </section>
+
+      <aside>
+        <div class="card">
+          <div class="card-header">
+            <h2 class="mb-0">My submissions</h2>
+            <span class="badge"><%= submissions.length %></span>
+          </div>
+
+          <% if (submissions.length > 0) { %>
+            <ul class="list">
+              <% submissions.forEach(s => { %>
+                <li class="list-item">
+                  <div class="list-item-main">
+                    <p class="list-item-title"><a href="/submissions/<%= s.id %>"><%= s.title %></a></p>
+                    <span class="badge"><%= s.files.length %> file<%= s.files.length === 1 ? '' : 's' %></span>
+                  </div>
+                  <a class="btn btn-secondary btn-sm" href="/submissions/<%= s.id %>">Open</a>
+                </li>
+              <% }); %>
+            </ul>
+          <% } else { %>
+            <div class="empty-state">
+              <span class="empty-icon" aria-hidden="true">&#128196;</span>
+              <h3>Nothing submitted yet</h3>
+              <p>Start a submission from an assignment on the left.</p>
+            </div>
+          <% } %>
+        </div>
+
+        <div class="card mt-2">
+          <h3>Upload rules</h3>
+          <ul class="meta">
+            <li>Up to <strong>3 files</strong></li>
+            <li><strong>10 MB</strong> per file</li>
+            <li>PDF, JPEG, PNG or plain text</li>
+          </ul>
+        </div>
+      </aside>
+    </div>
+  </div>
+</main>
+
+<%- include('partials/_footer') %>

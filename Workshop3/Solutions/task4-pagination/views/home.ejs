@@ -1,0 +1,71 @@
+<%- include('partials/_header') %>
+<%- include('partials/_navbar') %>
+
+<main id="main">
+  <div class="container">
+    <section class="hero">
+      <div class="hero-grid">
+        <div>
+          <span class="eyebrow">Paginated quotes</span>
+          <h1>Discover and share inspiring quotes.</h1>
+          <p>Results are split into pages so the list stays fast and easy to scan as the collection grows.</p>
+          <div class="hero-actions">
+            <a class="btn" href="/share">Share a quote</a>
+            <a class="btn btn-secondary" href="/search">Search quotes</a>
+          </div>
+        </div>
+        <div class="stat-grid">
+          <div class="stat"><span class="stat-value"><%= page %></span><span class="stat-label">Current page</span></div>
+          <div class="stat"><span class="stat-value"><%= totalPages %></span><span class="stat-label">Total pages</span></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="section-head">
+      <h2>Recent quotes</h2>
+      <span class="badge badge--brand">Page <%= page %> of <%= totalPages %></span>
+    </div>
+
+    <% if (quotes.length > 0) { %>
+      <div class="quotes-list">
+        <% quotes.forEach(quote => { %>
+          <article class="quote-card">
+            <blockquote><%= quote.content %></blockquote>
+            <p class="quote-meta">
+              <span class="quote-author">— <%= quote.author %></span>
+              <span aria-hidden="true">·</span>
+              <small><%= new Date(quote.created_at).toLocaleString() %></small>
+            </p>
+            <div class="card-footer">
+              <a class="link-arrow" href="/quotes/<%= quote.id %>">View quote</a>
+              <a class="btn btn-secondary btn-sm" href="/quotes/<%= quote.id %>/edit">Edit</a>
+            </div>
+          </article>
+        <% }); %>
+      </div>
+
+      <nav class="pagination" aria-label="Pagination">
+        <% if (page > 1) { %>
+          <a href="/?page=<%= page - 1 %>" rel="prev">&larr; Previous</a>
+        <% } else { %>
+          <span class="disabled">&larr; Previous</span>
+        <% } %>
+        <span aria-current="page">Page <%= page %> of <%= totalPages %></span>
+        <% if (page < totalPages) { %>
+          <a href="/?page=<%= page + 1 %>" rel="next">Next &rarr;</a>
+        <% } else { %>
+          <span class="disabled">Next &rarr;</span>
+        <% } %>
+      </nav>
+    <% } else { %>
+      <div class="empty-state">
+        <span class="empty-icon" aria-hidden="true">&#8220;</span>
+        <h3>No quotes yet</h3>
+        <p>There are no quotes to paginate. Add the first one.</p>
+        <a class="btn btn-sm" href="/share">Share the first quote</a>
+      </div>
+    <% } %>
+  </div>
+</main>
+
+<%- include('partials/_footer') %>

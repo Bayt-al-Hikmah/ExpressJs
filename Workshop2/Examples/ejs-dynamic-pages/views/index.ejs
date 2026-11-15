@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="EJS dynamic pages demo: variables, conditionals and loops.">
+  <title>Home · EJS Demo</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="/">
+        <span class="brand-mark" aria-hidden="true">EJS</span>
+        <span>Dynamic Pages</span>
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a class="nav-link" href="/" aria-current="page">Home</a></li>
+          <li><a class="nav-link" href="/profile/alice">Profile</a></li>
+          <li><a class="nav-link" href="/dashboard/admin">Dashboard</a></li>
+          <li><a class="nav-link" href="/tasks">Tasks</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="container">
+      <section class="hero">
+        <span class="eyebrow">EJS demo</span>
+        <h1>Welcome, <%= name %>!</h1>
+        <p>This page is rendered on the server with EJS. Variables, conditionals and loops all shape the HTML you see.</p>
+        <div class="hero-actions">
+          <a class="btn" href="/profile/alice">View a profile</a>
+          <a class="btn btn-secondary" href="/tasks">Browse tasks</a>
+        </div>
+      </section>
+
+      <div class="grid grid-3">
+        <article class="card">
+          <h2>Dynamic variables</h2>
+          <p>Your name is passed from the route and printed safely with <code>&lt;%= name %&gt;</code>.</p>
+          <a class="link-arrow" href="/profile/alice">See a profile</a>
+        </article>
+        <article class="card">
+          <h2>Conditional content</h2>
+          <p>The dashboard changes copy for admins, members and guests using an <code>if / else</code> block.</p>
+          <a class="link-arrow" href="/dashboard/admin">Open dashboard</a>
+        </article>
+        <article class="card">
+          <h2>Loops &amp; lists</h2>
+          <p>Tasks are rendered by looping over an array and handling the empty state gracefully.</p>
+          <a class="link-arrow" href="/tasks">See the task list</a>
+        </article>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <p>&copy; 2026 Express Workshop · EJS Demo</p>
+      <p>Built with Express and EJS</p>
+    </div>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,43 @@
+generator client {
+  provider            = "prisma-client-js"
+  output              = "../generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db { 
+  provider = "postgresql" 
+}
+
+model User {
+  id            Int            @id @default(autoincrement())
+  username      String         @unique @db.VarChar(25)
+  passwordHash  String         @map("password_hash") @db.VarChar(255)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  organized     Event[]        @relation("OrganizedEvents")
+  registrations Registration[]
+  @@map("users")
+}
+
+model Event {
+  id            Int            @id @default(autoincrement())
+  title         String         @db.VarChar(120)
+  description   String?        @db.Text
+  location      String         @db.VarChar(120)
+  date          DateTime       @db.Timestamptz(6)
+  organiserId   Int            @map("organiser_id")
+  organiser     User           @relation("OrganizedEvents", fields: [organiserId], references: [id], onDelete: Cascade)
+  registrations Registration[]
+  @@index([organiserId])
+  @@map("events")
+}
+
+model Registration {
+  userId    Int      @map("user_id")
+  eventId   Int      @map("event_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  @@id([userId, eventId])
+  @@map("registrations")
+}

@@ -1,0 +1,59 @@
+<%- include('partials/_header') %>
+<%- include('partials/_navbar') %>
+
+<main id="main">
+  <div class="container container--narrow">
+    <div class="page-head">
+      <div>
+        <span class="eyebrow">Add to the collection</span>
+        <h1>Share a quote</h1>
+        <p>Keep it short and credit the author. Quotes can be up to 300 characters.</p>
+      </div>
+    </div>
+
+    <% const fieldError = (path) => errors.find(error => error.path === path); %>
+    <% const authorError = fieldError('author'); %>
+    <% const contentError = fieldError('content'); %>
+
+    <% if (submittedName) { %>
+      <div class="alert alert--success" role="status">
+        <span aria-hidden="true">&#10003;</span>
+        <div><strong>Quote added.</strong><br>Thanks, <%= submittedName %> — it is now in the recent quotes list.</div>
+      </div>
+    <% } %>
+
+    <% if (errors.length > 0) { %>
+      <div class="error-summary" role="alert">
+        <strong>Please fix the following:</strong>
+        <ul><% errors.forEach(e => { %><li><%= e.msg %></li><% }); %></ul>
+      </div>
+    <% } %>
+
+    <form class="form-card" action="/share" method="POST" novalidate>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+      <div class="field">
+        <label for="author">Author name <span class="required" aria-hidden="true">*</span></label>
+        <input id="author" name="author" type="text" value="<%= values.author %>" minlength="3" maxlength="100" autocomplete="name" required
+          <%= authorError ? 'aria-invalid="true" aria-describedby="author-error"' : '' %>>
+        <% if (authorError) { %><p class="field-error" id="author-error"><%= authorError.msg %></p><% } else { %><p class="hint">At least 3 characters.</p><% } %>
+      </div>
+
+      <div class="field">
+        <label for="content">Quote text <span class="required" aria-hidden="true">*</span></label>
+        <textarea id="content" name="content" maxlength="300" required
+          <%= contentError ? 'aria-invalid="true" aria-describedby="content-error"' : '' %>><%= values.content %></textarea>
+        <% if (contentError) { %><p class="field-error" id="content-error"><%= contentError.msg %></p><% } else { %><p class="hint">Up to 300 characters.</p><% } %>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit">Submit quote</button>
+        <a class="btn btn-secondary" href="/">Cancel</a>
+      </div>
+    </form>
+
+    <p class="muted mt-2"><small>Your quote will appear on the <a href="/">home page</a> as soon as it is submitted.</small></p>
+  </div>
+</main>
+
+<%- include('partials/_footer') %>

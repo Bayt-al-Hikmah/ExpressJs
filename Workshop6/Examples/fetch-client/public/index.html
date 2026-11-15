@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="A small Fetch API client that loads and adds items through an Express JSON API.">
+  <title>Fetch Client · Workshop 6</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="/">
+        <span class="brand-mark" aria-hidden="true">F</span>
+        <span>Fetch Client</span>
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a class="nav-link" href="/" aria-current="page">Items</a></li>
+          <li><a class="nav-link" href="/api/items">API response</a></li>
+        </ul>
+      </nav>
+      <div class="header-actions">
+        <span class="badge">GET + POST</span>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="container container--narrow">
+      <section class="hero">
+        <span class="eyebrow">Browser ↔ JSON API</span>
+        <h1>Load and add items with Fetch.</h1>
+        <p>This page talks to the Express API without reloading. The list is loaded with <code>GET /api/items</code> and new items are sent with <code>POST /api/items</code>.</p>
+      </section>
+
+      <div class="split">
+        <section>
+          <div class="page-head">
+            <div>
+              <h2>Items</h2>
+              <p class="muted">Items are stored in memory and reset when the server restarts.</p>
+            </div>
+            <span class="badge badge--brand" id="count">Loading…</span>
+          </div>
+
+          <div id="status" class="status-line" role="status" aria-live="polite"></div>
+          <ul id="list" class="list" aria-label="Items"></ul>
+        </section>
+
+        <aside>
+          <form id="form" class="form-card" novalidate>
+            <h2>Add an item</h2>
+            <div class="field">
+              <label for="title">Title <span class="required" aria-hidden="true">*</span></label>
+              <input id="title" name="title" type="text" maxlength="120" placeholder="e.g. Practice Fetch" autocomplete="off" required>
+              <p class="hint">The API rejects an empty title.</p>
+            </div>
+            <div class="form-actions">
+              <button class="btn-block" type="submit">Add item</button>
+            </div>
+          </form>
+        </aside>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <p>&copy; 2026 Express Workshop · Fetch Client</p>
+      <p>Built with the Fetch API</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

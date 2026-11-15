@@ -1,0 +1,18 @@
+<header class="site-header">
+  <div class="container header-inner">
+    <a class="brand" href="/">
+      <img class="brand-logo" src="/images/logo.svg" alt="">
+      <span>Quote Sharing</span>
+    </a>
+    <nav aria-label="Main navigation">
+      <ul class="nav-links">
+        <li><a class="nav-link" href="/" <%= title === 'Home' ? 'aria-current="page"' : '' %>>Home</a></li>
+        <li><a class="nav-link" href="/share" <%= title === 'Share a Quote' ? 'aria-current="page"' : '' %>>Share</a></li>
+        <li><a class="nav-link" href="/search" <%= title === 'Search Quotes' ? 'aria-current="page"' : '' %>>Search</a></li>
+      </ul>
+    </nav>
+    <div class="header-actions">
+      <a class="btn btn-sm" href="/share">Share a quote</a>
+    </div>
+  </div>
+</header>

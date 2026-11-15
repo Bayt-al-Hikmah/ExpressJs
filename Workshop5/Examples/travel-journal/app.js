@@ -1,0 +1,49 @@
+import "dotenv/config";
+import express from "express";
+import session from "express-session";
+import path from "node:path";
+import multer from "multer";
+import { unlink } from "node:fs/promises";
+
+import authRoutes from "./routes/auth.js";
+import tripRoutes from "./routes/trips.js";
+import entryRoutes from "./routes/entries.js";
+import mediaRoutes from "./routes/media.js";
+import requireLogin from "./middleware/requireLogin.js";
+import { generateToken } from "./middleware/csrf.js";
+
+const app = express();
+if (!process.env.SESSION_SECRET) throw new Error('SESSION_SECRET is required.');
+
+app.set('view engine','ejs');
+app.set('views', path.join(process.cwd(),'views'));
+app.use(express.static(path.join(process.cwd(),'public')));
+app.use(express.urlencoded({ extended:false }));
+
+app.use(session({
+  name:'sid', secret:process.env.SESSION_SECRET, resave:false, saveUninitialized:false,
+  cookie:{ httpOnly:true, sameSite:'lax', secure: process.env.NODE_ENV==='production', maxAge:1000*60*60*24 }
+}));
+
+app.use((req,res,next)=>{ res.locals.currentUser=req.session.user??null; res.locals.csrfToken=generateToken(req); next(); });
+
+app.get('/',(req,res)=> req.session.user ? res.redirect('/trips') : res.redirect('/login'));
+app.use(authRoutes);
+app.use('/trips', requireLogin, tripRoutes);
+app.use('/entries', requireLogin, entryRoutes);
+app.use('/media', requireLogin, mediaRoutes);
+
+app.use((req,res)=>res.status(404).render('error',{title:'Not Found', message:'Page not found.'}));
+
+app.use(async (err, req, res, next)=>{
+  const uploaded=[...(Array.isArray(req.files)?req.files:[]), ...(req.file?[req.file]:[])];
+  await Promise.all(uploaded.map(f=>unlink(f.path).catch(()=>{})));
+  if(res.headersSent) return next(err);
+  if(err.code==='EBADCSRFTOKEN') return res.status(403).render('error',{title:'Forbidden',message:'Invalid or missing CSRF token.'});
+  if(err instanceof multer.MulterError) return res.status(err.code==='LIMIT_FILE_SIZE'?413:400).render('error',{title:'Upload Error',message: err.code==='LIMIT_FILE_SIZE'?'File too large.':'Upload could not be processed.'});
+  if(err.code==='UNSUPPORTED_FILE_TYPE' || err.code==='INVALID_FILE_CONTENT') return res.status(400).render('error',{title:'Upload Error',message:err.message});
+  console.error(err);
+  res.status(500).render('error',{title:'Server Error',message:'Something went wrong.'});
+});
+
+app.listen(3000, ()=>console.log('Server running at http://localhost:3000'));

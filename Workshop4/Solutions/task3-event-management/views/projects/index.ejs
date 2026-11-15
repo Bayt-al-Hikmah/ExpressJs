@@ -1,0 +1,113 @@
+<%- include('../partials/_header') %>
+<%- include('../partials/_navbar') %>
+
+<main id="main">
+  <div class="container">
+    <div class="page-head">
+      <div>
+        <span class="eyebrow">Event management</span>
+        <h1>Events</h1>
+        <p>Create events, see who is attending and register for others.</p>
+      </div>
+      <span class="badge badge--brand"><%= events.length %> event<%= events.length === 1 ? '' : 's' %></span>
+    </div>
+
+    <div class="split">
+      <section>
+        <% if (errors.length > 0) { %>
+          <div class="error-summary" role="alert">
+            <strong>Please fix the following:</strong>
+            <ul><% errors.forEach(e => { %><li><%= e.msg %></li><% }); %></ul>
+          </div>
+        <% } %>
+
+        <div class="section-head" style="margin-top:0">
+          <h2>All events</h2>
+        </div>
+
+        <% if (events.length > 0) { %>
+          <div class="grid">
+            <% events.forEach(ev => { const registered = ev.registrations.some(r => r.userId === me); %>
+              <article class="card">
+                <div class="card-header">
+                  <div>
+                    <h2 class="mb-0"><%= ev.title %></h2>
+                    <p class="muted mb-0"><%= ev.location %> · <%= new Date(ev.date).toLocaleString() %></p>
+                  </div>
+                  <% if (ev.organiserId === me) { %>
+                    <span class="badge badge--brand">Your event</span>
+                  <% } %>
+                </div>
+
+                <% if (ev.description) { %><p><%= ev.description %></p><% } %>
+
+                <ul class="meta">
+                  <li><strong>Organiser:</strong> <%= ev.organiser.username %></li>
+                  <li><strong>Attendees:</strong> <%= ev.registrations.length %></li>
+                </ul>
+
+                <div class="card-footer">
+                  <div class="cluster">
+                    <% if (!registered) { %>
+                      <form class="inline-form" action="/projects/<%= ev.id %>/register" method="POST">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <button class="btn btn-sm" type="submit">Register</button>
+                      </form>
+                    <% } else { %>
+                      <span class="badge badge--success">Registered</span>
+                    <% } %>
+                  </div>
+                  <% if (ev.organiserId === me) { %>
+                    <form class="inline-form" action="/projects/<%= ev.id %>/delete" method="POST" onsubmit="return confirm('Delete this event?')">
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                      <button class="btn btn-danger btn-sm" type="submit">Delete event</button>
+                    </form>
+                  <% } %>
+                </div>
+              </article>
+            <% }); %>
+          </div>
+        <% } else { %>
+          <div class="empty-state">
+            <span class="empty-icon" aria-hidden="true">+</span>
+            <h3>No events yet</h3>
+            <p>Create the first event using the form on the right.</p>
+          </div>
+        <% } %>
+      </section>
+
+      <aside>
+        <form class="form-card" action="/projects" method="POST" novalidate>
+          <h2>Create event</h2>
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+          <div class="field">
+            <label for="title">Title <span class="required" aria-hidden="true">*</span></label>
+            <input id="title" name="title" type="text" value="<%= values.title %>" maxlength="120" required>
+          </div>
+
+          <div class="field">
+            <label for="description">Description</label>
+            <textarea id="description" name="description" maxlength="500"><%= values.description %></textarea>
+          </div>
+
+          <div class="field">
+            <label for="location">Location <span class="required" aria-hidden="true">*</span></label>
+            <input id="location" name="location" type="text" value="<%= values.location %>" maxlength="120" required>
+          </div>
+
+          <div class="field">
+            <label for="date">Date and time <span class="required" aria-hidden="true">*</span></label>
+            <input id="date" name="date" type="datetime-local" value="<%= values.date %>" required>
+          </div>
+
+          <div class="form-actions">
+            <button class="btn-block" type="submit">Create event</button>
+          </div>
+        </form>
+      </aside>
+    </div>
+  </div>
+</main>
+
+<%- include('../partials/_footer') %>
