@@ -1,1436 +1,1528 @@
+# Workshop 4: Using an ORM, Authentication, and Authorization
+
 ## Objectives
-- Implement secure password hashing with `argon` and protect routes using middleware.
-- Introduce **SQLite** as a lightweight, file-based database for persistent data storage.
-- Interact with the database using raw SQL queries, a custom `User` class, and the **Sequelize** ORM.
 
-## Hashed Passwords and Authentication
+In this workshop, we will learn how to:
 
-### Hashing Passwords
+- Understand what an ORM is and why developers use one.
+- Configure Prisma ORM to work with PostgreSQL.
+- Define database models and relationships using Prisma.
+- Perform CRUD operations through Prisma Client.
+- Understand the difference between authentication and authorization.
+- Register users and securely store their passwords.
+- Implement login and logout using sessions.
+- Protect routes and restrict access to user-owned resources.
 
-Storing passwords in plain text is a significant security risk, as unauthorized access to our database could expose them. Instead, we’ll hash passwords using a one-way function, ensuring that even we, as developers, cannot reverse them. When a user logs in, we hash their input and compare it to the stored hash. If they match, the login is successful.
+## Introduction
 
-We’ll use the argon2 library, which provides:
+In the previous workshop, we learned how to connect an Express application to PostgreSQL and interact with the database using SQL queries. We created tables, inserted records, retrieved information, and implemented CRUD operations.
 
-- argon2.hash(password): Generates a secure hash for a password.
-- argon2.verify(hash, password): Verifies if a provided password matches the stored hash.
+Writing SQL directly is useful because it helps us understand how relational databases work. However, as an application grows, writing and maintaining queries throughout the application can become repetitive.
 
-### Install Dependencies 
-We begin by installing Express and the necessary packages.
-```bash
-npm install express ejs argon2 dotenv express-validator iron-session multer
-```
-### Preparing Environment Variables
-We create a ``.env`` file and store the environment variables inside it.  
-**`.env`**
-```bash
-SESSION_SECRET=oihgahahvaaiohaehahvaai594qqfqq61
-NODE_ENV=development
-```
-### Creating middlewares
-We start with creating the middleware that handle sessions.  
-**`middlewares/session.js`**  
-```javascript
-const { getIronSession } = require('iron-session');
-require('dotenv').config();
-module.exports = async (req, res,next) => {
-const session = await getIronSession(req, res, {
-    cookieName: 'session',
-    password: process.env.SESSION_SECRET || 'a-very-long-random-secret-key-change-this!',
-    cookieOptions: {
-      secure: process.env.NODE_ENV === 'production', // only over HTTPS in production
-      httpOnly: true,
-      sameSite: 'lax',
-      maxAge: 15 * 60,
-    },
-  })
-  req.session = session; 
-  next();
-};
-```
-This middleware initializes a secure session for each request using **Iron Session**. It loads the secret key from environment variables and sets cookie options such as security, HTTP-only access, and expiration time. The created session is then attached to `req.session`, making it available in the rest of the app, and the middleware passes control to the next handler.  
-After this we create the ``404.js`` middleware to handel non existing pages  
-**`middlewares/404.js`**
-```javascript
-module.exports = (req, res) => {
-const username = req.session.user?.username || null;
-  res.status(404).render('404', {
-    username:username,
-    messages:[{ category: 'danger', message: 'Page don\'t exist' }],
-    title: 'Page Not Found',
-    url: req.originalUrl
-  });
-};
-```
-This middleware runs when we try to access a non-existing page. We add it at the end of the middleware stack so it executes whenever a requested route doesn’t match any of the defined routes. It renders a 404 page with an error message, showing the username if the user is logged in.   
-Finally we create the LoginCheck.js middleware that checks if the user is logged in or not.  
-**`middlewares/loginCheck.js`:**
-```javascript 
-const requireLogin = async (req, res, next) => {
-    const username = req.session.user?.username || null;
-    if (!username) {
-        req.session.messages = [
-            { category: 'danger', message: 'You must be logged in to access this page.' }
-        ];
-        await req.session.save();
-        return res.redirect('/login');
-    }
-    next();
-};
+In this workshop, we will explore another way to work with relational databases: **Object-Relational Mapping (ORM)**. We will use Prisma to define our data models and interact with PostgreSQL through JavaScript methods instead of writing SQL for every operation.
 
-module.exports = requireLogin;
-```
-The `requireLogin` middleware checks if `req.session.user?.username` exists, indicating a logged-in user. If not, it redirects to the login page with a flash message. This middleware is applied to protected routes, keeping our code DRY.  
-Finally we set the upload middleware. 
-**``middlewares/upload.js``** 
-```javascript
-const multer = require('multer');
-const path = require('path');
+We will also introduce two important concepts used in multi-user applications: **authentication** and **authorization**. Authentication allows an application to verify a user's identity, while authorization determines which resources that user is allowed to access or modify.
 
-// Configure storage and file filtering
-const upload = multer({
-    dest: 'public/avatars/', // You can make this dynamic if needed
-    fileFilter: (req, file, cb) => {
-        const allowedExtensions = ['.png', '.jpg', '.jpeg', '.gif'];
-        const ext = path.extname(file.originalname).toLowerCase();
+To practise these concepts, we will build a different application: a **Study Planner**. Users will be able to create accounts, organise their studies into projects, and manage tasks within each project. Each user will have their own projects and tasks, which will give us an opportunity to work with database relationships and access control.
 
-        if (allowedExtensions.includes(ext)) {
-            cb(null, true);
-        } else {
-            cb(new Error('Only images are allowed'));
-        }
-    }
-});
+We will continue using PostgreSQL, but this time Prisma will handle the interaction between our Express application and the database.
 
-module.exports = upload;
-```
-### Creating the routes
-We’ve finished creating our middlewares. Now, we’ll set up the routes, All the routes from previous lecture stay same we need only make changes on auth route, to make it use argon2 and save hashed password instead of plain text.    
-**`routes/auth.js`:**
-```javascript
-const express = require('express');
-const argon = require('argon2');
-const { body, validationResult } = require('express-validator');
-const router = express.Router();
+## Understanding Object-Relational Mapping (ORM)
 
-router.get('/register', async (req, res) => {
-    const messages = req.session.messages || [];
-    const username = req.session.user?.username || null
-    const errors = req.session.errors || []
-    req.session.messages = [];
-    req.session.errors = [];
-    await req.session.save();
-    return res.render('register', { errors, messages  ,username });
-});
+Before working with Prisma, let's understand what an ORM is and why it is useful.
 
-router.post('/register', [
-    body('username').notEmpty().withMessage('Username is required').trim().isLength({ min: 3, max: 25 }),
-    body('password').notEmpty().withMessage('Password is required').isLength({ min: 6 })
-], async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        req.session.errors = errors.errors;
-        await req.session.save();
-        return res.redirect('/register');
-    }
+An **Object-Relational Mapping (ORM)** tool allows us to interact with a relational database using objects and methods from our programming language instead of writing SQL queries for every operation.
 
-    const { username, password } = req.body;
-    if (req.app.locals.users[username]) {
-        req.session.messages = [{ category: 'danger', message: 'Username already exists!' }];
-        await req.session.save();
-        return res.redirect('/register');
-    }
-    hashed_password = await argon.hash(password)
-    req.app.locals.users[username] = { hashed_password, avatar: null };
-    req.session.messages = [{ category: 'success', message: 'Registration successful! Please log in.' }];
-    await req.session.save();
-    return res.redirect('/login');
-});
+In a relational database, information is organised into tables containing rows and columns. In our application, however, we usually work with objects representing entities such as users, projects, and tasks.
 
-router.get('/login', async (req, res) => {
-    const messages = req.session.messages || [];
-    const username = req.session.user?.username || null
-    const errors = req.session.errors || []
-    req.session.messages = [];
-    await req.session.save();
-    return res.render('login', { errors, messages ,username,errors});
-});
+An ORM connects these two worlds by mapping database tables to application models. This allows us to work with database records using concepts that are familiar from our application code.
 
-router.post('/login', [
-    body('username').notEmpty().withMessage('Username is required'),
-    body('password').notEmpty().withMessage('Password is required')
-], async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        
-        req.session.errors = errors.errors;
-        await req.session.save();
-        return res.redirect('/login');
-    }
+For example, consider a database table named `users`:
 
-    const { username, password } = req.body;
-    const user = req.app.locals.users[username];
-    if (user && await argon.verify(user.hashed_password ,password)) {
-        req.session.user = { username };
-        req.session.messages = [{ category: 'success', message: 'Login successful!' }];
-        await req.session.save();
-        return res.redirect('/');
-    } else {
-        req.session.messages = [{ category: 'danger', message: 'Invalid username or password.' }];
-        await req.session.save();
-        return res.redirect('/login');
-    }
-});
+| id | username | password_hash |
+|---|---|---|
+| 1 | ali | ... |
+| 2 | sara | ... |
 
-router.get('/logout',  async  (req, res) => {
-    await req.session.destroy();
-    return res.redirect('/login');
-});
-
-module.exports = router;
-```
-**GET /register**
-
-When the user visits `/register`:
-
-- The server renders the **register** page (EJS, Handlebars, etc.) with any stored messages from the session (like errors or success notifications).
-    
-- After rendering, it clears the session messages to avoid showing old alerts again.
-    
-
-**POST /register**
-
-When the registration form is submitted:
-
-- The server validates the input fields:
-    
-    - `username` must not be empty and must be between 3 and 25 characters.
-        
-    - `password` must not be empty and must be at least 6 characters long.
-        
-- If validation fails, the user is redirected back to `/register` with error messages.    
-- If validation passes:
-    - The server checks if the username already exists in memory (`req.app.locals.users`).
-    - If it exists: a danger message (“Username already exists!”) is stored, and the user is redirected to `/register`.
-    - If it’s a new username:
-        - The password is securely hashed using **Argon2** with `await argon.hash(password)`.
-        - The new user is stored in memory: `req.app.locals.users[username] = { password_hash };`
-        - A success message (“Registration successful! Please log in.”) is saved to the session.
-        - The user is redirected to `/login`.
-
-**GET /login**
-
-When the user visits `/login`:
-
-- The server renders the **login** page with any flash messages stored in the session (like “Registration successful” or “Invalid credentials”).
-    
-- It then clears these messages to prevent duplicates.
-    
-
- **POST /login**
-
-When the login form is submitted:
-
-- The server validates that both `username` and `password` fields are filled.
-- If validation fails, it redirects back to `/login` with error messages.
-- If validation passes:
-    - It looks up the user in memory (`req.app.locals.users[username]`).
-    - **Argon2** is used to verify the password:`await argon.verify(user.password_hash, password)`
-    - If the credentials are valid:
-        - The user’s information is saved to the session (`req.session.username = user.username`).
-        - A success message (“Login successful!”) is shown.
-        - The user is redirected to `/`.
-    - If invalid:
-        - An error message (“Invalid username or password.”) is stored.
-        - The user is redirected back to `/login`.
-            
-			 
-**GET /logout**
-
-When visiting `/logout`:
-
-- The session is destroyed using `req.session.destroy()`, logging the user out.
-    
-- After logout, the user is redirected to `/login`. 
-### Templates and Style
-We use the same template that we built on our previous lecture same to layout and the partials and the styles.  
-Finally we set the ``app.js``
-**`app.js`**
-```javascript
-const express = require('express');
-const authRoutes = require('./routes/auth');
-const  profile = require('./routes/profile');
-const  wiki = require('./routes/wiki');
-const notFoundHandler = require('./middlewares/404');
-const Session = require('./middlewares/session');
-const app = express();
-const port = 3000;
-
-app.locals.users = {}; // e.g., { 'username': { password: 'password123', avatar: null } }
-app.locals.pages = {}; // e.g., { 'HomePage': { content: 'Welcome!', author: 'admin' } }
-
-app.set('view engine', 'ejs');
-app.use(express.static('public'));
-app.use(express.urlencoded({ extended: true }));
-app.use(Session)
-
-
-app.use(authRoutes);
-app.use(profile);
-app.use(wiki);
-app.get('/', (req, res) => {
-  const username = req.session.user?.username || null;
-  const messages = req.session.messages || [];
-
-  return res.render('index', { username, messages });
-
-  req.session.messages = [];
-});
-
-app.use(notFoundHandler);
-
-
-app.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
-});
-```
-With this setup, we’ve made our app more secure and organized. User passwords are now stored as hashed values instead of plain text, preventing sensitive data leaks.
-
-## Working with SQLite
-Storing users in memory (just in the server’s RAM) is convenient for quick prototyping, but it has a major limitation: all data is lost whenever the server restarts because RAM is volatile. For any real-world application, we need persistent storage a way to save data that survives server restarts. This is where a database comes in. A database provides a structured and reliable way to store, manage, and retrieve data, ensuring that users’ information is safe and always accessible.
-
-We’ll use **SQLite**, a lightweight, file-based database ideal for learning and small to medium-sized applications. SQLite’s advantages include:
-
-- **Serverless**: No separate server process is required.
-- **File-Based**: Data is stored in a single file (e.g., database.db).
-- **Built-in**: Available in Node.js via the sqlite3 package, requiring no additional setup.
-
-### Creating the Database
-
-
-We define a schema for our SQLite database to store user information. The schema includes a user table with fields for id, username, and password_hash.
-
-**`schema.sql`:**
+Using SQL, we could retrieve a user with:
 
 ```sql
-CREATE TABLE users (
-
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-    username TEXT UNIQUE NOT NULL,
-
-    password_hash TEXT NOT NULL,
-
-    avatar TEXT
-
-);
-
-CREATE TABLE pages (
-
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-    title TEXT UNIQUE NOT NULL,
-
-    content TEXT NOT NULL
-
-);
+SELECT * FROM users WHERE id = 1;
 ```
 
-### Initialize the Database
-First we connect and create the database file
+With an ORM, we can perform the same operation using a method:
 
-```shell
-sqlite3 database.db 
-```
-
-Now we will be inside the `sqlite` terminal , we run the following command to create our table
-
-```shell
-.read schema.sql
-```
-
-Then we quit the sqlite terminal using
-
-```shell
-.quit
-```
-
-This creates database.db with the user table, ready for use.
-### Connecting Express with SQLite
-The `sqlite3` package lets us connect to SQLite and execute queries.
-
-
-**Install SQLite3**
-```shell
-npm install sqlite3
-```
-Now we create the middlwares to contact with the database.  
-**`middlewares/dbMiddleware.js`**
 ```javascript
-const sqlite3 = require('sqlite3').verbose();
-
-module.exports = function () {
-  return (req, res, next) => {
-    if (!req.app.get('db')) {
-      const db = new sqlite3.Database('database.db', (err) => {
-        if (err) {
-          console.error('Failed to connect to SQLite:', err);
-          return next(err);
-        }
-        console.log('Connected to SQLite database');
-      });
-
-      req.app.set('db', db);
-
-      const closeDb = () => {
-        const db = req.app.get('db');
-        if (db) {
-          db.close((err) => {
-            if (err) {
-              console.error('Failed to close SQLite:', err);
-            } else {
-              console.log('SQLite database connection closed');
-            }
-            process.exit(0);
-          });
-        } else {
-          process.exit(0);
-        }
-      };
-
-      // Handle process termination signals
-      process.on('SIGINT', closeDb);
-      process.on('SIGTERM', closeDb);
-    }
-    next();
-  };
-};
-```
-We first imports the sqlite3 library and enables verbose mode for better debugging messages. Then, we exports a function that returns our middleware. This allows us to easily plug it into our Express app using app.use(require('./dbMiddleware')()).
-
-Inside the middleware, we first checks if the app already has a database connection stored (`req.app.get('db')`). If it doesn’t, we creates a new SQLite connection to the file **`database.db`**.  
-If there’s an error connecting, we logs it and calls `next(err)` to pass the error to Express for handling. Otherwise, we prints “Connected to SQLite database”.
-
-Once the connection is ready, we save it inside the Express app with `req.app.set('db', db)`. This means all routes can later access it via `req.app.get('db')` so the same database connection is reused across the app instead of creating a new one every time.
-
-Next, we defines a helper function called **`closeDb`**. This function safely closes the database connection when the application is stopped. It logs whether the close was successful or not, then exits the process.
-
-Finally, we set our middlware to listens for two system signals `SIGINT` (like when we press Ctrl+C) and `SIGTERM` (sent by some hosting environments to shut down apps). When either happens, it calls `closeDb()` to ensure the SQLite connection closes properly before the app exits.
-
-At the end, the middleware calls `next()` so Express continues to the next handler or route.
-
-### Editing the routes
-Now we’ll update our routes to use the database for storing and retrieving data instead of relying on local storage.
-**`routes/auth.js`**
-```javascript
-const express = require('express');
-const argon = require('argon2');
-const { body, validationResult } = require('express-validator');
-const router = express.Router();
-
-router.get('/register', async (req, res) => {
-    const messages = req.session.messages || [];
-    const username = req.session.user?.username || null
-    const errors = req.session.errors || []
-    req.session.messages = [];
-    req.session.errors = [];
-    await req.session.save();
-    return res.render('register', { errors, messages  ,username });
-});
-
-router.post('/register', [
-    body('username').notEmpty().withMessage('Username is required').trim().isLength({ min: 3, max: 25 }),
-    body('password').notEmpty().withMessage('Password is required').isLength({ min: 6 })
-], async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        req.session.errors = errors.errors;
-        await req.session.save();
-        return res.redirect('/register');
-    }
-
-    const { username, password } = req.body;
-    const db = req.app.get('db');
-    const existingUser = await new Promise((resolve, reject) => {
-      db.get('SELECT * FROM users WHERE username = ?', [username], (err, row) => {
-        if (err) reject(err)
-        resolve(row)
-      })
-    })
-
-    if (existingUser) {
-      req.session.messages = [{ category: 'danger', message: 'Username already exists!' }]
-      await req.session.save();
-      return res.redirect('/register')
-    }
-
-    hashed_password = await argon.hash(password)
-    await new Promise((resolve, reject) => {
-      db.run('INSERT INTO users (username, password_hash) VALUES (?, ?)', [username, hashed_password],async (err) => {
-        if (err){
-            req.session.messages = [{ category: 'danger', message: 'Database error.' }];
-            await req.session.save();
-            return res.redirect('/register')
-        } 
-        resolve()
-      })
-    })
-   
-    req.session.messages = [{ category: 'success', message: 'Registration successful! Please log in.' }];
-          
-    await req.session.save();
-    return res.redirect('/login');
-        
-});
-
-router.get('/login', async (req, res) => {
-    const messages = req.session.messages || [];
-    const username = req.session.user?.username || null
-    const errors = req.session.errors || []
-    req.session.messages = [];
-    await req.session.save();
-    return res.render('login', { errors, messages ,username,errors});
-});
-
-router.post('/login', [
-    body('username').notEmpty().withMessage('Username is required'),
-    body('password').notEmpty().withMessage('Password is required')
-], async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        
-        req.session.errors = errors.errors;
-        await req.session.save();
-        return res.redirect('/login');
-    }
-
-    const { username, password } = req.body;
-    const db = req.app.get('db');
-
-    const user = await new Promise((resolve, reject) => {
-    db.get('SELECT * FROM users WHERE username = ?', [username], (err, row) => {
-        if (err) reject(err)
-        resolve(row)
-      })
-    })
-
-      if (user && await argon.verify(user.password_hash, password)) {
-        req.session.user = { username };
-        req.session.messages = [{ category: 'success', message: 'Login successful!' }];
-        await req.session.save();
-        return res.redirect('/');
-      } else {
-        req.session.messages = [{ category: 'danger', message: 'Invalid username or password.' }];
-        await req.session.save();
-        return res.redirect('/login');
-      }
-});
-
-
-router.get('/logout',  async  (req, res) => {
-    await req.session.destroy();
-    return res.redirect('/login');
-});
-
-module.exports = router;
-```
-In this code, we use a real database instead of local storage to store and retrieve user data. When we register a user, we insert their information into the database using the ``db.run()`` method, and when we need to check if a username already exists or verify login credentials, we use ``db.get()`` to retrieve a single record.We use question marks (`?`) as placeholders for example, ``db.get('SELECT * FROM users WHERE username = ?', [username], ...)``. These placeholders make our queries safe from SQL injection. Instead of directly inserting user input into the SQL string, the database automatically replaces the ``?`` with the actual values from the array (like [username, hashed_password]) in a secure way. This ensures that any special characters or malicious input from users are treated as data, not as SQL commands. For example, if someone tried to enter a harmful input like ``john'); DROP TABLE users; --``, it would not break our query or damage the database because the database engine escapes it properly.
-
-We also use Promises to make our database operations cleaner and easier to manage. Normally, database functions like ``db.get()`` and ``db.run()`` use callbacks, which can quickly make the code messy and hard to follow. To improve readability, we wrap these calls inside Promises and then use await to pause the execution until the database responds. If the operation succeeds, the Promise resolves with the result (like the retrieved row), and if there’s an error, it rejects and throws an exception. This allows us to write database logic in a more straightforward, synchronous-looking style using async/await.   
-**`routes/profile.js`**
-```javascript
-const express = require('express');
-const requireLogin = require('../middlewares/loginCheck.js');
-const upload = require('../middlewares/upload.js');
-
-const router = express.Router();
-
-// --- Profile page ---
-router.get('/profile', requireLogin, async (req, res) => {
-  const username = req.session.user?.username || null;
-  const db = req.app.get('db');
-  const user = await new Promise((resolve, reject) => {
-      db.get('SELECT * FROM users WHERE username = ?', [username], (err, row) => {
-        if (err) reject(err)
-        resolve(row)
-      })
-    })
-  
-
-    const messages = req.session.messages || [];
-    req.session.messages = [];
-    await req.session.save();
-    return res.render('profile', { user, username, messages });
-  });
-
-
-// --- Avatar upload ---
-router.post('/profile', requireLogin, upload.single('avatar'), async (req, res) => {
-  const username = req.session.user?.username || null;
-  const db = req.app.get('db');
-
-  if (!req.file) {
-    req.session.messages = [{ category: 'danger', message: 'No file selected or invalid file type.' }];
-    await req.session.save();
-    return res.redirect('/profile');
+const user = await prisma.user.findUnique({
+  where: {
+    id: 1
   }
-
-  const filename = req.file.filename;
-  await new Promise((resolve, reject) => {
-      db.run('UPDATE users SET avatar = ? WHERE username = ?', [filename, username],async (err) => {
-        if (err){
-            req.session.messages = [{ category: 'danger', message: 'Database error while updating avatar.' }];
-            await req.session.save();
-            return res.redirect('/profile')
-        } 
-        resolve()
-      })
-    })
-    req.session.messages = [{ category: 'success', message: 'Avatar updated successfully!' }];
-    await req.session.save();
-    return res.redirect('/profile');
-  
-});
-
-module.exports = router;
-
-```
-Same as before, we use the database instead of ``local objects`` to store and retrieve user profile data. In the GET ``/profile`` route, we get the logged-in username from the session and use ``db.get('SELECT * FROM users WHERE username = ?', [username])`` to fetch the user’s information. The ``?`` acts as a placeholder that securely inserts values into the SQL query, protecting against SQL injection by treating input as data rather than executable code.
-
-In the POST ``/profile`` route, after uploading an avatar, we update the user’s record with ``db.run('UPDATE users SET avatar = ? WHERE username = ?', [filename, username])``. Both ``db.get()`` and ``db.run()`` are wrapped in Promises so we can use async/await, making the code easier to read and manage. This approach ensures that user data is safely stored and retrieved from the database instead of being kept temporarily in memory.  
-**`routes/wiki.js`**
-```javascript
-const express = require('express');
-const { body, validationResult } = require('express-validator');
-const requireLogin = require('../middlewares/loginCheck.js');
-
-const router = express.Router();
-
-// Ensure the wiki table exists
-
-
-// --- View a wiki page ---
-router.get('/wiki/:pageName', async (req, res) => {
-    const db = req.app.get('db');
-    const pageName = req.params.pageName;
-    const username = req.session.user?.username || null;
-
-    const page = await new Promise((resolve, reject) => {
-      db.get('SELECT * FROM pages WHERE title = ?', [pageName], (err, row) => {
-        if (err){
-            reject(err)
-            return res.redirect('/404');
-            
-        } 
-        resolve(row)
-      })
-    })
- 
-    if (!page) {
-      req.session.messages = [{ category: 'danger', message: 'This page don\'t exist' }];
-      await req.session.save();
-      return res.redirect('/404');
-    }
-
-    // Add an htmlContent property (same as old code)
-    page.htmlContent = page.content;
-    return res.render('wiki_page', { page, pageName, username, messages: [] });
-  
-});
-
-// --- Create page form ---
-router.get('/create', requireLogin, async (req, res) => {
-  const messages = req.session.messages || [];
-  const username = req.session.user?.username || null;
-  const errors = req.session.errors || [];
-
-  req.session.messages = [];
-  req.session.errors = [];
-  await req.session.save();
-
-  return res.render('create_page', { username, errors, messages });
-});
-
-// --- Handle page creation ---
-router.post(
-  '/create',
-  requireLogin,
-  [
-    body('title').notEmpty().withMessage('Page title is required').trim(),
-    body('content').notEmpty().withMessage('Content is required')
-  ],
-  async (req, res) => {
-    const db = req.app.get('db');
-    const username = req.session.user?.username || null;
-    const errors = validationResult(req);
-
-    if (!errors.isEmpty()) {
-      req.session.errors = errors.errors;
-      await req.session.save();
-      return res.redirect('/create');
-    }
-
-    const { title, content } = req.body;
-    await new Promise((resolve, reject) => {
-      db.run('INSERT INTO pages (title, content) VALUES (?, ?)', [title, content],async (err) => {
-        if (err){
-            if (err.message.includes('UNIQUE constraint failed')) {
-            req.session.messages = [{ category: 'danger', message: 'A page with that title already exists!' }];
-            } else {
-            
-            req.session.messages = [{ category: 'danger', message: 'Failed to create page.' }];
-            }
-          await req.session.save();
-          return res.redirect('/create');
-        } 
-        resolve()
-      })
-    })
-    req.session.messages = [{ category: 'success', message: 'Page created successfully!' }];
-    await req.session.save();
-    return res.redirect(`/wiki/${title}`);
-    
-  }
-);
-
-module.exports = router;
-```
-Finally for ``wiki.js`` file, we use the database to store and retrieve wiki pages. In the GET ``/wiki/:pageName`` route, we use ``db.get('SELECT * FROM pages WHERE title = ?', [pageName])`` to fetch the requested page from the database. The ``?`` acts as a placeholder for the page title, which keeps the query safe from SQL injection by ensuring that user input is handled as plain data, not executable SQL code.
-
-When creating a new page in the POST ``/create route``, we use ``db.run('INSERT INTO pages (title, content) VALUES (?, ?)', [title, content])`` to insert the data into the database.  
-Finally we update the `app.js` File to use the database.  
-**`app.js`**
-```javascript
-const express = require('express');
-const authRoutes = require('./routes/auth');
-const  profile = require('./routes/profile');
-const  wiki = require('./routes/wiki');
-const notFoundHandler = require('./middlewares/404');
-const Session = require('./middlewares/session');
-const dbMiddleware = require('./middlewares/dbMiddleware.js');
-const app = express();
-const port = 3000;
-
-
-app.set('view engine', 'ejs');
-app.use(express.static('public'));
-app.use(express.urlencoded({ extended: true }));
-app.use(Session)
-app.use(dbMiddleware())
-
-app.use(authRoutes);
-app.use(profile);
-app.use(wiki);
-app.get('/', (req, res) => {
-  const username = req.session.user?.username || null;
-  const messages = req.session.messages || [];
-  req.session.messages = [];
-  return res.render('index', { username, messages });
-
-  
-});
-
-app.use(notFoundHandler);
-
-
-app.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
 });
 ```
-## Refactoring with a User Class
 
-Our SQLite-based app works well, but the current routes contain raw SQL queries, mixing database logic with request handling. This approach breaks the **DRY (Don’t Repeat Yourself)** principle and makes maintenance harder since we repeat queries like `SELECT * FROM users WHERE username = ?` in multiple places. It also couples the route logic too closely with the database structure, reducing flexibility and scalability.
+Here, we use `prisma.user.findUnique()` to retrieve a user whose ID is `1`.
 
-To improve this, we’ll introduce `User` and `Page` classes that encapsulate all database operations. These classes will provide clean, reusable methods for actions such as creating a user, finding one by username, or managing wiki pages. By separating data access from route logic, our code becomes more organized, maintainable, and easier to extend in the future.  
-### Creating the model class
-We first start with creating the User class   
-**``models/User.js``**
-```javascript
-const argon2 = require('argon2')
-class User {
-  static async create(db, username, password) {
-    const passwordHash = await argon2.hash(password)
-    return new Promise((resolve, reject) => {
-      db.run('INSERT INTO users (username, password_hash) VALUES (?, ?)', [username, passwordHash], function (err) {
-        if (err) reject(err)
-        resolve()
-      })
-    })
-  }
+The ORM translates this method call into the appropriate database query and returns the result to our application. We can then work with that result as a JavaScript object.
 
-  static async findByUsername(db, username) {
-    return new Promise((resolve, reject) => {
-      db.get('SELECT * FROM users WHERE username = ?', [username], (err, row) => {
-        if (err) reject(err)
-        resolve(row)
-      })
-    })
-  }
-  static async updateAvatar(db, username, avatarFilename) {
-    return new Promise((resolve, reject) => {
-      db.run(
-        'UPDATE users SET avatar = ? WHERE username = ?',
-        [avatarFilename, username],
-        function (err) {
-          if (err) reject(err)
-          resolve()
-        }
-      )
-    })
+### Why use an ORM?
+
+An ORM offers several advantages:
+
+- **Less repetitive SQL:** Common operations such as creating, updating, and retrieving records are provided through reusable methods.
+- **Model-based development:** We define our database structure using models that represent application entities.
+- **Relationship management:** We can define relationships between models and retrieve related records more easily.
+- **Database consistency:** Schema migrations help us manage changes to the database structure over time.
+- **Developer productivity:** We can focus more on application logic instead of manually constructing every database query.
+
+However, using an ORM does not mean that we no longer need to understand SQL or relational databases. We still need to understand tables, relationships, indexes, constraints, and how database queries affect performance. The ORM makes common operations easier to write, but it does not remove the underlying database concepts.
+
+### Which ORM will we use?
+
+There are several ORM libraries available in the Node.js ecosystem, including Sequelize, TypeORM, and Prisma.
+
+For this workshop, we will use **Prisma ORM**.
+
+Prisma provides a schema language that allows us to define our data models. It also generates **Prisma Client**, which gives us methods for creating, retrieving, updating, and deleting database records from our JavaScript application.
+
+Now that we understand the role of an ORM and the tool we will use, let's set up Prisma in a new Express project.
+
+## Setting Up Prisma with PostgreSQL
+
+Before installing Prisma, let's create a new directory for our Study Planner application.
+
+We will keep this application separate from the project we used in the previous workshop. This gives us an opportunity to practise the same backend concepts in a different context instead of continuously extending one application.
+
+### Creating the project
+
+```bash
+mkdir study-planner
+cd study-planner
+npm init -y
+```
+
+Next, we will configure the project to use ES modules. This allows us to use `import` and `export` syntax throughout our application:
+
+```bash
+npm pkg set type="module"
+```
+
+Now install the packages we need for the application:
+
+```bash
+npm install express ejs express-session csrf-sync express-validator argon2 dotenv @prisma/client@7 @prisma/adapter-pg@7 pg
+```
+
+Install Prisma CLI and the TypeScript runner:
+
+```bash
+npm install -D prisma@7 tsx
+```
+
+You may notice that we specify the major version when installing Prisma.
+
+**Why are we installing Prisma version 7 explicitly?**
+
+Prisma 8 is currently available as a release candidate, while Prisma 7 remains the supported stable major version. We will use Prisma 7 throughout this workshop so that the commands and code examples remain consistent.
+
+We are also installing `tsx` because Prisma 7 generates a TypeScript client. It allows our JavaScript application to execute the generated TypeScript client without requiring us to convert the entire project to TypeScript.
+
+Update the scripts in `package.json`:
+
+```json
+{
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch app.js",
+    "start": "tsx app.js"
   }
 }
-
-module.exports = User
 ```
-We create a `User` class to serve as a model that represents users in our application. This class provides dedicated methods for common user operations, keeping our code organized and consistent.
 
-The `User.create(db, username, password)` method hashes the password using **Argon2**, a secure password-hashing algorithm, and then inserts the new user into the database with `db.run()`. This ensures that we never store plain-text passwords, enhancing security.
+### Creating the PostgreSQL database
 
-The `User.findByUsername(db, username)` method retrieves a user’s record from the database based on their username using `db.get()`. It returns the corresponding row if the user exists.  
-The `User.updateAvatar(db, username, avatarFilename)` method updates the user’s avatar in the database using `db.run()`. It replaces the existing value in the `avatar` column with the new file name for the user identified by their username.  
+Before configuring Prisma, we need a PostgreSQL database for our application.
 
-Both methods use **Promises** to wrap the database operations, allowing us to use `async/await` for clean, readable asynchronous code.  
-**`models/Page.js`**
-```javascript
-class Page {
-  static async create(db, title, content) {
-    return new Promise((resolve, reject) => {
-      db.run(
-        'INSERT INTO pages (title, content) VALUES (?, ?)',
-        [title, content],
-        function (err) {
-          if (err) reject(err)
-          resolve()
-        }
-      )
-    })
-  }
+Create a new database named `study_planner`. You can do this using the PostgreSQL command line or a graphical database tool.
 
-  static async findByTitle(db, title) {
-    return new Promise((resolve, reject) => {
-      db.get('SELECT * FROM pages WHERE title = ?', [title], (err, row) => {
-        if (err) reject(err)
-        resolve(row)
-      })
-    })
-  }
-}
+We will use the following connection string:
 
-module.exports = Page
+```env
+DATABASE_URL="postgresql://postgres:password@localhost:5432/study_planner"
+SESSION_SECRET="your-long-random-secret"
 ```
-The `Page.create(db, title, content)` method inserts a new wiki page into the database using `db.run()`. It safely passes the page title and content as parameters through `?` placeholders to prevent SQL injection.
 
-The `Page.findByTitle(db, title)` method retrieves a page record from the database whose title matches the given one, using `db.get()`. If a matching page exists, it returns the row; otherwise, it returns `undefined`.
+Replace the username and password in `DATABASE_URL` with your own PostgreSQL credentials.
 
-Both methods use **Promises**, allowing us to call them with `await` in routes for cleaner asynchronous handling.
-### Updating Routes
-Now We update our routes file to use the database models that we built.  
-**`routes/auth.js`**
-```javascript
-const express = require('express');
-const argon = require('argon2');
-const User = require('../models/User')
-const { body, validationResult } = require('express-validator');
-const router = express.Router();
+The `SESSION_SECRET` value will be used later when we configure user sessions. For now, make sure that you replace the example value with a long, random secret.
 
-router.get('/register', async (req, res) => {
-    const messages = req.session.messages || [];
-    const username = req.session.user?.username || null
-    const errors = req.session.errors || []
-    req.session.messages = [];
-    req.session.errors = [];
-    await req.session.save();
-    res.render('register', { errors, messages  ,username });
-});
+Create a `.gitignore` file:
 
-router.post('/register', [
-    body('username').notEmpty().withMessage('Username is required').trim().isLength({ min: 3, max: 25 }),
-    body('password').notEmpty().withMessage('Password is required').isLength({ min: 6 })
-], async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        req.session.errors = errors.errors;
-        await req.session.save();
-        return res.redirect('/register');
-    }
-
-    const { username, password } = req.body;
-    const db = req.app.get('db');
-    const existingUser = await User.findByUsername(db,username);
-
-    if (existingUser) {
-      req.session.messages = [{ category: 'danger', message: 'Username already exists!' }]
-      await req.session.save();
-      return res.redirect('/register')
-    }
-
-    try {
-      await User.create(db, username, password);
-      req.session.messages = [{ category: 'success', message: 'Registration successful! Please log in.' }];
-      await req.session.save();
-      return res.redirect('/login');
-    } catch (err) {
-      req.session.messages = [{ category: 'danger', message: 'Error creating user. Please try again.' }]
-      await req.session.save();
-      return res.redirect('/register')
-    }      
-});
-
-router.get('/login', async (req, res) => {
-    const messages = req.session.messages || [];
-    const username = req.session.user?.username || null
-    const errors = req.session.errors || []
-    req.session.messages = [];
-    await req.session.save();
-    return res.render('login', { errors, messages ,username,errors});
-});
-
-router.post('/login', [
-    body('username').notEmpty().withMessage('Username is required'),
-    body('password').notEmpty().withMessage('Password is required')
-], async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        
-        req.session.errors = errors.errors;
-        await req.session.save();
-        return res.redirect('/login');
-    }
-
-    const { username, password } = req.body;
-    const db = req.app.get('db');
-
-    const user =  await User.findByUsername(db,username);
-
-      if (user && await argon.verify(user.password_hash, password)) {
-        req.session.user = { username };
-        req.session.messages = [{ category: 'success', message: 'Login successful!' }];
-        await req.session.save();
-        return res.redirect('/');
-      } else {
-        req.session.messages = [{ category: 'danger', message: 'Invalid username or password.' }];
-        await req.session.save();
-        return res.redirect('/login');
-      }
-});
-
-
-router.get('/logout',  async  (req, res) => {
-    await req.session.destroy();
-    return res.redirect('/login');
-});
-
-module.exports = router;
+```gitignore
+node_modules/
+.env
+generated/
 ```
-We can see that we removed all the complexity of raw SQL queries and replaced them with clean method calls from our `User` model. We start by importing the `User` class from our models folder, which serves as the interface for all user-related database operations. This makes the routes much simpler and easier to read.
 
-In the **registration route**, instead of writing SQL manually, we call `User.findByUsername(db, username)` to check if a user already exists, and `User.create(db, username, password)` to add a new user. The `User` model takes care of hashing the password and inserting the data securely into the database, keeping our route focused only on validation and user feedback.
+Never commit your environment variables or database credentials to a public repository.
 
-In the **login route**, we use `User.findByUsername(db, username)` again to retrieve the stored user record, then verify the password using **Argon2**. If the password matches, we create a session for the user; otherwise, we return an error message.  
+### Initialising Prisma
 
-**``routes/profile.js``**
-```javascript
-const User = require('../models/User')
-const express = require('express');
-const requireLogin = require('../middlewares/loginCheck.js');
-const upload = require('../middlewares/upload.js');
-const router = express.Router();
+With the project and database ready, we can initialise Prisma.
 
-router.get('/profile', requireLogin, async (req, res) => {
-  const username = req.session.user?.username || null;
-  const db = req.app.get('db');
-  const user =  await User.findByUsername(db,username);
-  
+Run the following command:
 
-    const messages = req.session.messages || [];
-    req.session.messages = [];
-    await req.session.save();
-    return res.render('profile', { user, username, messages });
-  });
-
-router.post('/profile', requireLogin, upload.single('avatar'), async (req, res) => {
-  const username = req.session.user?.username || null;
-  const db = req.app.get('db');
-
-  if (!req.file) {
-    req.session.messages = [{ category: 'danger', message: 'No file selected or invalid file type.' }];
-    await req.session.save();
-    return res.redirect('/profile');
-  }
-
-  const filename = req.file.filename;
-  try {
-    await User.updateAvatar(db, username, filename);
-    req.session.messages = [{ category: 'success', message: 'Avatar updated successfully!' }];
-    await req.session.save();
-    return res.redirect('/profile');
-  } catch (err) {
-    req.session.messages = [{ category: 'danger', message: 'Error updating avatar. Please try again.' }];
-    await req.session.save();
-    return res.redirect('/profile');
-  }
-  
-});
-
-module.exports = router;
-```
-Same as before, we start by importing the `User` model, which handles all user-related database operations. We use `User.findByUsername(db, username)` to fetch the user’s data from the database, and when we want to update the avatar, we use `User.updateAvatar(db, username, filename)` from our model to update the avatar in the database, eliminating the need for raw SQL statements.  
-
-**`routes/wiki.js`**
-```javascript
-const express = require('express');
-const { body, validationResult } = require('express-validator');
-const requireLogin = require('../middlewares/loginCheck.js');
-const Page = require('../models/Page');
-const router = express.Router();
-
-
-router.get('/wiki/:pageName', async (req, res) => {
-    const db = req.app.get('db');
-    const pageName = req.params.pageName;
-    const username = req.session.user?.username || null;
-    const page = await Page.findByTitle(db, pageName);
- 
-    if (!page) {
-      req.session.messages = [{ category: 'danger', message: 'This page don\'t exist' }];
-      await req.session.save();
-      return res.redirect('/404');
-    }
-    page.htmlContent = page.content;
-    return res.render('wiki_page', { page, pageName, username, messages: [] });
-  
-});
-
-router.get('/create', requireLogin, async (req, res) => {
-  const messages = req.session.messages || [];
-  const username = req.session.user?.username || null;
-  const errors = req.session.errors || [];
-
-  req.session.messages = [];
-  req.session.errors = [];
-  await req.session.save();
-
-  return res.render('create_page', { username, errors, messages });
-});
-
-router.post(
-  '/create',
-  requireLogin,
-  [
-    body('title').notEmpty().withMessage('Page title is required').trim(),
-    body('content').notEmpty().withMessage('Content is required')
-  ],
-  async (req, res) => {
-    const db = req.app.get('db');
-    const username = req.session.user?.username || null;
-    const errors = validationResult(req);
-
-    if (!errors.isEmpty()) {
-      req.session.errors = errors.errors;
-      await req.session.save();
-      return res.redirect('/create');
-    }
-
-    const { title, content } = req.body;
-    try{
-      await Page.create(db, title, content);
-      req.session.messages = [{ category: 'success', message: 'Page created successfully!' }];
-      await req.session.save();
-      return res.redirect(`/wiki/${title}`);
-    } catch(err){
-      req.session.messages = [{ category: 'danger', message: 'Error creating page. It might already exist.' }];
-      await req.session.save();
-      return res.redirect('/create');
-    }
-     
-  }
-);
-
-module.exports = router;
-```
-Finally for ``wiki.js`` route, we usethe `Page` model, which manages all database operations related to wiki pages. Instead of writing raw SQL queries, we now use methods from the model to handle data interactions.
-
-We use `Page.findByTitle(db, pageName)` to retrieve a page’s content from the database and display it to the user. When creating a new page, we call `Page.create(db, title, content)` to insert the page into the database.  
-
-We didn’t need to make any changes to the `app.js` file.
-
-With this new structure, our code becomes much more readable, easier to maintain, and more scalable. By separating raw SQL queries from the route logic, we achieve a clear separation of concerns  our JavaScript files now focus on application flow, while the models handle all database operations in a clean and reusable way.
-## Using Prisma
-While the `User` class helped organize our code, we were still manually writing SQL queries, which can quickly become difficult to maintain as the application grows. Switching to another database system like PostgreSQL or MySQL would require rewriting most of those queries. Managing relationships, such as linking users to their wiki pages, also introduces extra complexity and repetitive SQL.
-
-This is where **Prisma**, a modern **TypeScript- and JavaScript-friendly ORM**, comes in. Prisma lets us define our database structure using a clean schema file and automatically generates a powerful client for interacting with our data. Instead of writing raw SQL, we use intuitive, object-oriented methods like `prisma.user.create()` or `prisma.page.findUnique()`. This makes database operations safer, easier to read, and portable across multiple database engines, while also providing built-in validation, type safety, and relationship management.
-### Updating Our Project
-
-We’ll begin by removing the old files `models/User.js`, `models/Page.js`, and `middlewares/dbMiddleware.js`  since Prisma will handle all database interactions for us.
-
-**Install Prisma**  
-Next, we install Prisma 
 ```bash
-npm install prisma @prisma/client
+npx prisma@7 init
 ```
-Now we initialize it with SQLite as our database:
-```bash
-npx prisma init --datasource-provider sqlite
-```
-This creates a new `prisma/` folder with a `schema.prisma` file where we’ll define our database models (such as `User` and `Page`), and a `.env` file that stores our database connection URL.  
-**``.env``**
-```bash
-SESSION_SECRET=oihgahahvaaiohaehahvaai594qqfqq61
-NODE_ENV=development
-DATABASE_URL="file:./database.db"
-```
-### Define Our Prisma models
-Prisma uses its own **Prisma Schema Language (PSL)** to describe the structure of our database including models, their fields, and relationships.
 
-To create and define our models, we open the `prisma/schema.prisma` file. Here, we can define tables like `User` and `Page` as models, specifying their columns, data types, and how they relate to one another. Prisma will then use this schema to generate the corresponding database tables and a fully type-safe client for interacting with them.
-**`prisma/schema.prisma`**
+This command creates the Prisma configuration and schema files.
+
+Our project will have a structure similar to this:
+
+```text
+study-planner/
+│
+├── generated/
+├── prisma/
+│   └── schema.prisma
+│
+├── app.js
+├── package.json
+├── prisma.config.ts
+├── .env
+└── .gitignore
+```
+
+### Configuring Prisma
+
+Open `prisma.config.ts`:
+
+```typescript
+import "dotenv/config";
+import { defineConfig, env } from "prisma/config";
+
+export default defineConfig({
+  schema: "prisma/schema.prisma",
+
+  datasource: {
+    url: env("DATABASE_URL")
+  }
+});
+```
+
+This configuration tells Prisma where to find our schema and provides the database connection URL through the `DATABASE_URL` environment variable.
+
+Now open `prisma/schema.prisma`:
+
 ```prisma
-datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+generator client {
+  provider            = "prisma-client"
+  output              = "../generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "ts"
 }
 
-generator client {
-  provider = "prisma-client-js"
+datasource db {
+  provider = "postgresql"
+}
+```
+
+Let's look at a few details in this configuration.
+
+Notice that we are not placing the database connection URL inside `schema.prisma`. In Prisma 7, the connection URL is configured through `prisma.config.ts`.
+
+We are also specifying a custom output directory for the generated Prisma Client. The `importFileExtension = "ts"` setting ensures that the generated imports work correctly when we use `tsx` to run our JavaScript application.
+
+## Designing Our Database Models
+
+Now that Prisma is configured, we can start designing the database structure for our Study Planner.
+
+Before writing application routes or database queries, we need to identify the main types of information our application will store.
+
+Our Study Planner has three main entities:
+
+**User:** Represents a registered account.
+
+**Project:** Represents a study project created by a user. For example, a user might create projects such as Electronics, Mathematics, or Programming.
+
+**Task:** Represents an individual task belonging to a project. A task might be to study a chapter, complete an exercise, or build a small circuit.
+
+These entities are connected through relationships. We can represent the structure as follows:
+
+```text
+User
+ │
+ │ One-to-Many
+ │
+ ▼
+Project
+ │
+ │ One-to-Many
+ │
+ ▼
+Task
+```
+
+Let's read this diagram from top to bottom.
+
+A user can have multiple projects, but each project belongs to one user. Similarly, a project can contain multiple tasks, but each task belongs to one project.
+
+Both relationships are examples of **one-to-many relationships**. We will represent these relationships in Prisma so that we can retrieve related records and enforce the ownership structure of our application.
+
+### Defining the models
+
+Open `prisma/schema.prisma` and add the following models:
+
+```prisma
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  COMPLETED
 }
 
 model User {
-  id            Int      @id @default(autoincrement())
-  username      String   @unique
-  password_hash String   
-  avatar        String?  
-  pages         Page[]
+  id           Int       @id @default(autoincrement())
+  username     String    @unique @db.VarChar(25)
+  passwordHash String    @map("password_hash") @db.VarChar(255)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  projects     Project[]
+
+  @@map("users")
 }
 
-model Page {
-  id        Int      @id @default(autoincrement())
-  title     String   @unique
-  content   String
-  authorId  Int?
-  author    User?    @relation(fields: [authorId], references: [id])
+model Project {
+  id          Int       @id @default(autoincrement())
+  title       String    @db.VarChar(100)
+  description String?   @db.Text
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  userId      Int       @map("user_id")
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tasks       Task[]
+
+  @@index([userId])
+  @@map("projects")
+}
+
+model Task {
+  id          Int        @id @default(autoincrement())
+  title       String     @db.VarChar(150)
+  description String?    @db.Text
+  status      TaskStatus @default(TODO)
+  dueDate     DateTime?  @map("due_date") @db.Timestamptz(6)
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  projectId   Int        @map("project_id")
+  project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("tasks")
 }
 ```
-This Prisma schema defines our database structure and how Prisma connects to it.
 
-The **`datasource`** block specifies the database we’re using here, it’s SQLite, stored in a file named `database.db`.  
-The **`generator`** block tells Prisma to generate a JavaScript client (`@prisma/client`), which we’ll use in our code to interact with the database.
+Let's break down the schema and understand the Prisma concepts used in these models.
 
-The **`User` model** represents our users table. Each user has:
-- `id`: a unique identifier that auto-increments.
-- `username`: a unique string for login.
-- `password_hash`: the hashed password.
-- `avatar`: an optional string field for storing the avatar filename.
-- `pages`: a one-to-many relation showing that each user can have multiple pages.
+### Models and fields
 
-The **`Page` model** represents wiki pages. Each page has:
-- `id`: a unique, auto-incrementing identifier.
-- `title`: a unique string for the page title.
-- `content`: the page’s text content.
-- `authorId`: a foreign key linking the page to its author.
-- `author`: a relation connecting the page back to its corresponding user (`User`).
-    
+Each `model` represents an entity in our application and, by default, maps to a table in the database.
 
-Together, these models define a **one-to-many relationship**  one `User` can have many `Page` entries  while Prisma automatically manages the relationships and underlying foreign keys for us.    
+For example, the `User` model represents the users stored in our database, while `Project` and `Task` represent the other two entities.
 
-After defining our Prisma models, run the following command to create the database and apply the initial schema:
+Inside a model, each field represents a property of that entity. Fields have types such as `Int`, `String`, `Boolean`, and `DateTime`.
+
+Some fields also have attributes:
+
+- `@id` identifies the primary key.
+- `@default(autoincrement())` automatically generates an ID.
+- `@unique` prevents duplicate values.
+- `@default(now())` sets the initial value to the current date and time.
+- `@map` maps a Prisma field to a differently named database column.
+- `@@map` maps a Prisma model to a differently named database table.
+
+The question mark in `description String?` means that the field is optional. A project or task can therefore be created without providing a description.
+
+### Relationships
+
+Consider these fields in the `User` model:
+
+```prisma
+projects Project[]
+```
+
+This tells Prisma that a user can be associated with multiple projects.
+
+Now let's look at the other side of the relationship. Consider the following fields in the `Project` model:
+
+```prisma
+userId Int
+
+user User @relation(
+  fields: [userId],
+  references: [id],
+  onDelete: Cascade
+)
+```
+
+The `userId` field is the foreign key that connects a project to its owner. It stores the ID of the user who created the project.
+
+The `user` field represents the relationship from Prisma Client's perspective. It allows us to retrieve the user associated with a project without manually writing a separate SQL join.
+
+The same idea applies to the relationship between projects and tasks: `projectId` stores the foreign key, while `project` represents the relationship in Prisma Client.
+
+Notice that we also use `onDelete: Cascade`. This means that deleting a project will automatically delete its associated tasks. Deleting a user will also delete that user's projects and their tasks.
+
+### Applying the database changes
+
+Once the models and relationships are defined, we need to apply them to our PostgreSQL database.
+
+We do this using a **migration**. Create the initial migration with the following command:
+
 ```bash
 npx prisma migrate dev --name init
 ```
-This command:
 
-- Creates a new SQLite database file (if it doesn’t exist).
-- Applies our schema changes (models) as a migration.
-- Generates the Prisma client, which we can import and use in our Node.js app.
+Then generate the Prisma Client:
 
-### Updating The routes
-Now we update the routes to work prisma.  
-**``routes/auth.js``**
+```bash
+npx prisma generate
+```
+
+A migration records a change to the database structure. Instead of manually creating the tables, Prisma generates and executes the SQL required to apply the schema.
+
+Whenever you modify your Prisma models, you should create a new migration so that the database structure stays in sync with your schema. You can then regenerate Prisma Client when needed.
+
+For example:
+
+```bash
+npx prisma migrate dev --name add_project_color
+npx prisma generate
+```
+
+## Connecting Prisma to Express
+
+Our database models are now defined, and the initial migration has created the corresponding tables in PostgreSQL.
+
+The next step is to connect Prisma Client to our Express application so that our routes can interact with the database.
+
+Create a directory named `db` and a file named `prisma.js`:
+
+```text
+study-planner/
+│
+├── db/
+│   └── prisma.js
+│
+├── generated/
+├── prisma/
+├── app.js
+└── ...
+```
+
+Inside `db/prisma.js`:
+
 ```javascript
-const express = require('express');
-const argon = require('argon2');
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+import "dotenv/config";
+import { PrismaClient } from "../generated/prisma/client.ts";
+import { PrismaPg } from "@prisma/adapter-pg";
 
-const { body, validationResult } = require('express-validator');
-const router = express.Router();
-
-router.get('/register', async (req, res) => {
-    const messages = req.session.messages || [];
-    const username = req.session.user?.username || null
-    const errors = req.session.errors || []
-    req.session.messages = [];
-    req.session.errors = [];
-    await req.session.save();
-    res.render('register', { errors, messages  ,username });
+const adapter = new PrismaPg({
+  connectionString: process.env.DATABASE_URL
 });
 
-router.post('/register', [
-    body('username').notEmpty().withMessage('Username is required').trim().isLength({ min: 3, max: 25 }),
-    body('password').notEmpty().withMessage('Password is required').isLength({ min: 6 })
-], async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        req.session.errors = errors.errors;
-        await req.session.save();
-        return res.redirect('/register');
-    }
-
-    const { username, password } = req.body;
-    const existingUser = await prisma.user.findUnique({
-      where: { username },
-    });
-    if (existingUser) {
-      req.session.messages = [{ category: 'danger', message: 'Username already exists!' }]
-      await req.session.save();
-      return res.redirect('/register')
-    }
-
-    try {
-      const password_hash = await argon.hash(password)
-      await prisma.user.create({
-      data: { username, password_hash },
-    });
-      req.session.messages = [{ category: 'success', message: 'Registration successful! Please log in.' }];
-      await req.session.save();
-      return res.redirect('/login');
-    } catch (err) {
-      req.session.messages = [{ category: 'danger', message: 'Error creating user. Please try again.' }]
-      await req.session.save();
-      return res.redirect('/register')
-    }      
+const prisma = new PrismaClient({
+  adapter
 });
 
-router.get('/login', async (req, res) => {
-    const messages = req.session.messages || [];
-    const username = req.session.user?.username || null
-    const errors = req.session.errors || []
-    req.session.messages = [];
-    await req.session.save();
-    return res.render('login', { errors, messages ,username,errors});
-});
+export default prisma;
+```
 
-router.post('/login', [
-    body('username').notEmpty().withMessage('Username is required'),
-    body('password').notEmpty().withMessage('Password is required')
-], async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        
-        req.session.errors = errors.errors;
-        await req.session.save();
-        return res.redirect('/login');
-    }
+Let's understand what this file does.
 
-    const { username, password } = req.body;
-    const user = await prisma.user.findUnique({
-      where: { username },
-    });
+First, we import the generated `PrismaClient` and the PostgreSQL adapter, `PrismaPg`. We then create the adapter using our database connection string and pass it to the Prisma Client constructor.
 
-      if (user && await argon.verify(user.password_hash, password)) {
-        req.session.user = { username };
-        req.session.messages = [{ category: 'success', message: 'Login successful!' }];
-        await req.session.save();
-        return res.redirect('/');
-      } else {
-        req.session.messages = [{ category: 'danger', message: 'Invalid username or password.' }];
-        await req.session.save();
-        return res.redirect('/login');
+Finally, we export the client so that other parts of our application can reuse it.
+
+**An important detail:** We should not create a new `PrismaClient` every time a route is called. A typical Express application should use one shared instance rather than repeatedly creating new database clients.
+
+Prisma 7 uses a database driver adapter for direct PostgreSQL connections. In our example, `PrismaPg` connects Prisma Client to PostgreSQL through the `pg` driver.
+
+## Working with CRUD Operations in Prisma
+
+Now that Prisma is connected to Express, we can start interacting with our database.
+
+In the previous workshop, we used SQL statements such as `INSERT`, `SELECT`, `UPDATE`, and `DELETE` to perform database operations. With Prisma, we use methods provided by Prisma Client to perform the same operations.
+
+These methods are organised around the models we defined in `schema.prisma`. Let's look at the basic CRUD operations one by one.
+
+For example:
+
+```javascript
+prisma.user
+prisma.project
+prisma.task
+```
+
+Each model exposes methods for interacting with its records. For example, `prisma.user` gives us access to operations for users, while `prisma.project` and `prisma.task` provide operations for projects and tasks.
+
+### Creating a record
+
+To create a project:
+
+```javascript
+const project = await prisma.project.create({
+  data: {
+    title: "Learning Electronics",
+    description: "My electronics learning roadmap",
+    user: {
+      connect: {
+        id: 1
       }
+    }
+  }
 });
-
-
-router.get('/logout',  async  (req, res) => {
-    await req.session.destroy();
-    return res.redirect('/login');
-});
-
-module.exports = router;
 ```
-We now use **Prisma** as our database layer instead of manually writing SQL queries or using custom models. Prisma automatically generates a **client** (`@prisma/client`) based on the schema we defined earlier, giving us a clean, type-safe API to interact with the database.
 
-We first import `PrismaClient` using `const { PrismaClient } = require('@prisma/client');` then we create client object with `const prisma = new PrismaClient();` ,after that we use `prisma.user.findUnique()` to check if a username already exists, and `prisma.user.create()` to add new users. Prisma handles table creation, data mapping, and relationships behind the scenes making the code more concise, consistent, and easier to maintain as the app grows.  
+The `create()` method inserts a new project into the database.
 
-**``routes/profile.js``**
+Notice that we use `connect` to associate the new project with an existing user. In this example, the project is connected to the user whose ID is `1`.
+
+### Retrieving records
+
+We can retrieve multiple records using `findMany()`. For example, to retrieve all projects:
+
 ```javascript
-const express = require('express');
-const requireLogin = require('../middlewares/loginCheck.js');
-const upload = require('../middlewares/upload.js');
+const projects = await prisma.project.findMany();
+```
 
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
-const router = express.Router();
+When we need one specific record, we can use `findUnique()`. For example, to retrieve a project using its ID:
 
-// --- Profile page ---
-router.get('/profile', requireLogin, async (req, res) => {
-  const username = req.session.user?.username || null;
-  const user= await prisma.user.findUnique({
-      where: { username },
-    });
+```javascript
+const project = await prisma.project.findUnique({
+  where: {
+    id: 1
+  }
+});
+```
 
-    const messages = req.session.messages || [];
-    req.session.messages = [];
-    await req.session.save();
-    return res.render('profile', { user, username, messages });
+The `findUnique()` method can also retrieve a record using another field that has a unique constraint. For example, we can retrieve a user using their username:
+
+```javascript
+const user = await prisma.user.findUnique({
+  where: {
+    username: "ali"
+  }
+});
+```
+
+### Updating records
+
+To modify an existing record, we use the `update()` method.
+
+For example, to change a project's title:
+
+```javascript
+const project = await prisma.project.update({
+  where: {
+    id: 1
+  },
+
+  data: {
+    title: "Learning Embedded Systems"
+  }
+});
+```
+
+Here, `where` identifies the record we want to update, while `data` contains the fields and values we want to change.
+
+### Deleting records
+
+When we no longer need a record, we can remove it using the `delete()` method.
+
+For example, to delete a project using its ID:
+
+```javascript
+await prisma.project.delete({
+  where: {
+    id: 1
+  }
+});
+```
+
+The `where` option identifies the project that should be deleted. Prisma then executes the corresponding database operation.
+
+These examples introduce the basic CRUD operations: creating, retrieving, updating, and deleting records.
+
+In a real application, we also need to validate submitted information, check whether the current user is allowed to perform an operation, and handle possible errors before changing the database.
+
+### Retrieving related records
+
+So far, we have retrieved individual records and collections of records. Another useful feature of an ORM is the ability to retrieve related records as part of the same query.
+
+For example, we can retrieve a project together with all its tasks:
+
+```javascript
+const project = await prisma.project.findUnique({
+  where: {
+    id: 1
+  },
+
+  include: {
+    tasks: true
+  }
+});
+```
+
+We can also retrieve a user together with their projects:
+
+```javascript
+const user = await prisma.user.findUnique({
+  where: {
+    id: 1
+  },
+
+  include: {
+    projects: true
+  }
+});
+```
+
+The `include` option tells Prisma to retrieve related records along with the main record.
+
+For example, we can retrieve a project and its tasks in one query. We will use this feature when displaying a user's projects and the tasks that belong to each project.
+
+## Authentication and Password Hashing
+
+Now that we understand how to create and retrieve database records, we can start working with user accounts.
+
+Before implementing registration and login, we need to understand two related but different concepts: **authentication** and **authorization**.
+
+**Authentication** is the process of verifying a user's identity. For example, when someone logs in using a username and password, the application checks whether the submitted credentials are valid.
+
+**Authorization** determines what an authenticated user is allowed to access or do. For example, a user may be allowed to manage their own projects but should not be allowed to modify another user's projects.
+
+In this section, we will begin with password security, which is an important part of implementing authentication.
+
+### Why should we hash passwords?
+
+When a user registers, they provide a password that the application needs to verify later during login.
+
+A common mistake is to store the original password directly in the database. This is dangerous because anyone who gains access to the database could read the users' passwords.
+
+Instead, we store a **password hash**. Password hashing transforms a password into a derived value that is intentionally expensive to reverse. When the user logs in, we verify the submitted password against the stored hash rather than trying to decrypt it.
+
+For this workshop, we will use **Argon2id**, a password-hashing algorithm designed for securely storing passwords. We already installed the `argon2` package when setting up the project.
+
+### Hashing a password
+
+```javascript
+import argon2 from "argon2";
+
+const password = "my-secure-password";
+
+const passwordHash = await argon2.hash(password, {
+  type: argon2.argon2id
+});
+```
+
+The value returned by `argon2.hash()` is the password hash that we store in the database.
+
+We should never store the original password. The hash is sufficient for verifying the password when the user attempts to log in.
+
+### Verifying a password
+
+When the user logs in, we use:
+
+```javascript
+const isValid = await argon2.verify(
+  passwordHash,
+  password
+);
+```
+
+The `argon2.verify()` method compares the submitted password with the stored hash and returns `true` if they match or `false` otherwise.
+
+Notice that we do not decrypt the hash to recover the original password. Password hashing is not encryption; it is a one-way process designed for password verification.
+
+## Managing User Sessions
+
+After verifying a user's identity, we need a way to recognise that user when they send additional requests to our application.
+
+HTTP is stateless. This means that each request is independent, and the server does not automatically remember which user made a previous request.
+
+To solve this problem, we can use **sessions**. A session allows the server to maintain information associated with a particular user's browser across multiple requests.
+
+We will use `express-session`, which we have already encountered in our earlier Express work.
+
+### How sessions work
+
+Let's follow what happens when a user logs in:
+
+1. The browser sends the user's login information to the server.
+2. The server verifies the submitted credentials.
+3. The server creates a session and stores information associated with the authenticated user.
+4. The browser receives a cookie containing the session ID.
+5. On subsequent requests, the browser sends that cookie automatically.
+6. The server uses the session ID to retrieve the associated session data.
+
+The cookie normally contains a session identifier, not the user's password. The actual session data is maintained by the server.
+
+### Configuring express-session
+
+Now let's configure the session middleware in `app.js`. This middleware must be registered before routes that need to access session information:
+
+```javascript
+import session from "express-session";
+
+app.use(
+  session({
+    name: "sid",
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+
+    cookie: {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 1000 * 60 * 60 * 24
+    }
+  })
+);
+```
+
+Let's go through the important options in this configuration:
+
+- `name` defines the session cookie name.
+- `secret` is used to sign the session identifier cookie.
+- `resave` controls whether the session is saved again when it has not changed.
+- `saveUninitialized` prevents saving sessions that have not been modified.
+- `httpOnly` prevents client-side JavaScript from reading the cookie.
+- `sameSite` helps control when browsers send the cookie with cross-site requests.
+- `secure` makes the browser send the cookie only over HTTPS.
+- `maxAge` defines how long the cookie remains valid.
+
+For this workshop, the default in-memory session store is sufficient for local development. However, it is not suitable for production because sessions are lost when the server restarts and the store is not designed for production workloads.
+
+A production application should use an appropriate persistent session store.
+
+### Session fixation protection
+
+There is one more important security step we should take when a user logs in: regenerate the session ID.
+
+This helps protect against **session fixation attacks**, where an attacker attempts to make a victim use a session identifier that is already known to the attacker.
+
+With `express-session`, we can use:
+
+```javascript
+req.session.regenerate((err) => {
+  if (err) {
+    return next(err);
+  }
+
+  req.session.user = {
+    id: user.id,
+    username: user.username
+  };
+
+  req.session.save((err) => {
+    if (err) {
+      return next(err);
+    }
+
+    res.redirect("/projects");
   });
-
-
-// --- Avatar upload ---
-router.post('/profile', requireLogin, upload.single('avatar'), async (req, res) => {
-  const username = req.session.user?.username || null;
-  
-
-  if (!req.file) {
-    req.session.messages = [{ category: 'danger', message: 'No file selected or invalid file type.' }];
-    await req.session.save();
-    return res.redirect('/profile');
-  }
-
-  const filename = req.file.filename;
-  try {
-    await prisma.user.update({
-      where: { username },
-      data: { avatar: filename },
-    });
-    req.session.messages = [{ category: 'success', message: 'Avatar updated successfully!' }];
-    await req.session.save();
-    return res.redirect('/profile');
-  } catch (err) {
-    req.session.messages = [{ category: 'danger', message: 'Error updating avatar. Please try again.' }];
-    await req.session.save();
-    return res.redirect('/profile');
-  }
-  
 });
-
-module.exports = router;
 ```
-We updated our profile route to use **Prisma** instead of the custom `User` model. again `prisma.user.findUnique()` retrieves the user’s data, and `prisma.user.update()` updates the avatar in the database.  
 
-**``routes/wiki.js``**
+The `regenerate()` method creates a new session ID. We then store the authenticated user's ID and username in the new session.
+
+Finally, we call `req.session.save()` before redirecting. This ensures that the session data is saved before the browser makes its next request.
+
+## Implementing Registration, Login, and Logout
+
+We now have the main components required to implement authentication:
+
+- **Prisma Client:** Stores and retrieves user records.
+- **Argon2id:** Hashes passwords during registration and verifies them during login.
+- **Express sessions:** Remembers authenticated users across requests.
+- **Express Validator:** Validates the information submitted through our forms.
+
+Let's combine these components to implement registration, login, and logout.
+
+Create a `routes` directory:
+
+```text
+study-planner/
+│
+├── routes/
+│   └── auth.js
+│
+├── db/
+├── generated/
+├── prisma/
+└── app.js
+```
+
+### Registration
+
+The first step is to allow a new user to create an account.
+
+The registration process should:
+
+1. Receive a username and password.
+2. Validate the submitted information.
+3. Check whether the username is already registered.
+4. Hash the password.
+5. Create the user in the database.
+6. Redirect the user to the login page.
+
+Let's implement the registration route in `routes/auth.js`.
+
+The following example focuses on the POST route that processes the submitted registration form:
+
 ```javascript
-const express = require('express');
-const { body, validationResult } = require('express-validator');
-const requireLogin = require('../middlewares/loginCheck.js');
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+import express from "express";
+import argon2 from "argon2";
+import { body, validationResult } from "express-validator";
+import prisma from "../db/prisma.js";
+import { csrfSynchronisedProtection } from "../middleware/csrf.js";
+
 const router = express.Router();
 
-router.get('/wiki/:pageName', async (req, res) => {
-    const pageName = req.params.pageName;
-    const username = req.session.user?.username || null;
-
-    const page =  await prisma.page.findUnique({
-      where: { title: pageName },
-      include: { author: true }, 
-    })
-    if (!page) {
-      req.session.messages = [{ category: 'danger', message: 'This page don\'t exist' }];
-      await req.session.save();
-      return res.redirect('/404');
-    }
-
-    // Add an htmlContent property (same as old code)
-    page.htmlContent = page.content;
-    return res.render('wiki_page', { page, pageName, username, messages: [] });
-  
-});
-
-// --- Create page form ---
-router.get('/create', requireLogin, async (req, res) => {
-  const messages = req.session.messages || [];
-  const username = req.session.user?.username || null;
-  const errors = req.session.errors || [];
-
-  req.session.messages = [];
-  req.session.errors = [];
-  await req.session.save();
-
-  return res.render('create_page', { username, errors, messages });
-});
-
-// --- Handle page creation ---
 router.post(
-  '/create',
-  requireLogin,
-  [
-    body('title').notEmpty().withMessage('Page title is required').trim(),
-    body('content').notEmpty().withMessage('Content is required')
-  ],
-  async (req, res) => {
-    const username = req.session.user?.username || null;
-    const errors = validationResult(req);
+  "/register",
+  csrfSynchronisedProtection,
 
-    if (!errors.isEmpty()) {
-      req.session.errors = errors.errors;
-      await req.session.save();
-      return res.redirect('/create');
-    }
+  body("username")
+    .isString()
+    .bail()
+    .trim()
+    .isLength({ min: 3, max: 25 })
+    .matches(/^[a-zA-Z0-9_]+$/),
 
-    const { title, content } = req.body;
-    try{
-      const user = await prisma.user.findUnique({where: { username },});
+  body("password")
+    .isString()
+    .bail()
+    .isLength({ min: 12 }),
 
-      await prisma.page.create({
-        data: {
-          title,
-          content,
-          author: user ? { connect: { id: user.id } } : undefined,
-        },
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+
+      if (!errors.isEmpty()) {
+        return res.status(400).render("auth/register", {
+          errors: errors.array(),
+          values: {
+            username: req.body.username
+          }
+        });
+      }
+
+      const username = req.body.username.toLowerCase();
+      const password = req.body.password;
+
+      const passwordHash = await argon2.hash(password, {
+        type: argon2.argon2id
       });
-      req.session.messages = [{ category: 'success', message: 'Page created successfully!' }];
-      await req.session.save();
-      return res.redirect(`/wiki/${title}`);
-    } catch(err){
-      console.error(err);
-      req.session.messages = [{ category: 'danger', message: 'Error creating page. It might already exist.' }];
-      await req.session.save();
-      return res.redirect('/create');
+
+      await prisma.user.create({
+        data: {
+          username,
+          passwordHash
+        }
+      });
+
+      res.redirect("/login");
+    } catch (error) {
+      if (error.code === "P2002") {
+        return res.status(409).render("auth/register", {
+          errors: [{ msg: "This username is already taken." }],
+          values: {
+            username: req.body.username
+          }
+        });
+      }
+
+      next(error);
     }
-    
-    
   }
 );
 
-module.exports = router;
-
+export default router;
 ```
-Finally for the `wiki.js` file. When a user visits a wiki page, `prisma.page.findUnique()` searches the database for a page with the given title and automatically includes the related author data thanks to the `include: { author: true }` option. This makes it easy to fetch both the page content and its creator in a single, clean query.
 
-When creating a new page, we use `prisma.user.findUnique()` to get the currently logged-in user and then call `prisma.page.create()` to insert the new page into the database. Prisma’s relational mapping lets us directly connect the new page to its author using `{ connect: { id: user.id } }`  no need to manually manage foreign keys or write SQL statements.
-### Updating The app.js file
-Now we do finall update on the `app.js` file, we remove the use of the ``dbMiddleware``    
-**``app.js``**
+Let's walk through the important parts of this route.
+
+First, the validation middleware checks the submitted username and password before the route handler processes them. We then call `validationResult(req)` to collect any validation errors. If the submitted information is invalid, we return the registration page with the errors and the previously entered username.
+
+If validation succeeds, we convert the username to lowercase and hash the password using Argon2id. We then create the user record through `prisma.user.create()`.
+
+There is also an important database constraint to consider. The `username` field is marked as `@unique` in our Prisma model, so two users cannot register with the same username. If a username is already registered, Prisma returns an error with the code `P2002`. We catch that error and display an appropriate message.
+
+Notice that we only save `passwordHash` in the database. The original password is never stored.
+
+### Login
+
+After users can create accounts, we need to allow them to log in.
+
+The login process is slightly different from registration. We need to:
+
+1. Receive the username and password.
+2. Find the user in the database.
+3. Verify the submitted password against the stored hash.
+4. Regenerate the session.
+5. Store the user's ID and username in the session.
+6. Redirect the user to their projects.
+
+Example:
+
 ```javascript
-const express = require('express');
-const authRoutes = require('./routes/auth');
-const  profile = require('./routes/profile');
-const  wiki = require('./routes/wiki');
-const notFoundHandler = require('./middlewares/404');
-const Session = require('./middlewares/session');
-const app = express();
-const port = 3000;
+router.post(
+  "/login",
+  csrfSynchronisedProtection,
 
-app.set('view engine', 'ejs');
-app.use(express.static('public'));
-app.use(express.urlencoded({ extended: true }));
-app.use(Session)
+  body("username").isString().bail().trim(),
+  body("password").isString(),
+
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+
+      if (!errors.isEmpty()) {
+        return res.status(400).render("auth/login", {
+          error: "Please enter valid credentials."
+        });
+      }
+
+      const username = req.body.username.toLowerCase();
+      const password = req.body.password;
+
+      const user = await prisma.user.findUnique({
+        where: {
+          username
+        }
+      });
+
+      if (
+        !user ||
+        !(await argon2.verify(user.passwordHash, password))
+      ) {
+        return res.status(401).render("auth/login", {
+          error: "Invalid username or password."
+        });
+      }
+
+      req.session.regenerate((err) => {
+        if (err) {
+          return next(err);
+        }
+
+        req.session.user = {
+          id: user.id,
+          username: user.username
+        };
+
+        req.session.save((err) => {
+          if (err) {
+            return next(err);
+          }
+
+          res.redirect("/projects");
+        });
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+```
+
+Let's look at the main steps in this route.
+
+First, we retrieve the user from the database using the submitted username. If the user does not exist, or if `argon2.verify()` determines that the password is incorrect, we return the same error message.
+
+This is intentional. Returning different messages could reveal whether a particular username is registered.
+
+When the credentials are valid, we regenerate the session ID and store the user's ID and username in the new session. Finally, we save the session and redirect the user to their projects.
+
+### Logout
+
+The final part of the authentication process is logout.
+
+Logging out means destroying the current session so that the browser can no longer use it to access authenticated routes.
+
+We use a POST request because logging out changes the application's state. We should also protect this request with CSRF middleware.
+
+```javascript
+router.post(
+  "/logout",
+  csrfSynchronisedProtection,
+  (req, res, next) => {
+    req.session.destroy((err) => {
+      if (err) {
+        return next(err);
+      }
+
+      res.clearCookie("sid", {
+        path: "/"
+      });
+
+      res.redirect("/login");
+    });
+  }
+);
+```
+
+Let's understand what happens when the user logs out.
+
+The `req.session.destroy()` method removes the current session from the session store. We then clear the `sid` cookie from the browser so that it no longer sends the old session identifier.
+
+After the session is destroyed, the browser can no longer use it to access the authenticated part of the application. We then redirect the user to the login page.
+
+## Protecting Routes with Authentication Middleware
+
+Now that users can register and log in, we need to protect the parts of our application that require an authenticated user.
+
+For example, visitors should not be able to access `/projects` unless they have logged in.
+
+We can enforce this rule using middleware. The middleware checks whether the current request belongs to a user with an active session and either allows the request to continue or redirects the visitor to the login page.
+
+Create a directory named `middleware` and add `requireLogin.js`:
+
+```javascript
+function requireLogin(req, res, next) {
+  if (!req.session.user) {
+    return res.redirect("/login");
+  }
+
+  next();
+}
+
+export default requireLogin;
+```
+
+Let's understand what this middleware does.
+
+It checks whether `req.session.user` exists. If it does not, the request does not belong to an authenticated user, so we redirect the visitor to the login page.
+
+Otherwise, `next()` passes control to the next middleware or route handler.
+
+We can now protect a route:
+
+```javascript
+app.get("/projects", requireLogin, async (req, res) => {
+  res.render("projects/index");
+});
+```
+
+Or we can protect an entire group of routes:
+
+```javascript
+app.use("/projects", requireLogin, projectRoutes);
+```
+
+This is especially useful when an entire section of the application requires authentication.
+
+## Authorization: Restricting Access to User-Owned Resources
+
+So far, we have used authentication to determine whether a user is logged in. However, being authenticated does not mean that a user should have access to every resource in the application.
+
+This is where **authorization** becomes important. Authentication tells us who the user is, while authorization determines what that user is allowed to access or modify.
+
+In our Study Planner, users should only be able to manage their own projects.
+
+Consider two users:
+
+- Ali creates a project named "Learning STM32".
+- Sara creates a project named "Web Development".
+
+Ali should not be able to edit or delete Sara's project simply by changing the project ID in the URL.
+
+This is an important security rule. Hiding an edit or delete button in the interface is not enough because users can still send requests directly to the server or change an ID in the URL.
+
+The server must verify ownership whenever a protected resource is retrieved, updated, or deleted.
+
+### Retrieving only the current user's projects
+
+Let's start with the project list.
+
+If we retrieve every project without applying a filter, all users could potentially see one another's projects. For example:
+
+```javascript
+const projects = await prisma.project.findMany();
+```
+
+Instead, we should retrieve only the projects that belong to the currently authenticated user:
+
+```javascript
+const projects = await prisma.project.findMany({
+  where: {
+    userId: req.session.user.id
+  },
+
+  orderBy: {
+    createdAt: "desc"
+  }
+});
+```
+
+Notice that the user ID comes from the session, not from a value submitted by the browser. This is important because users should not be able to choose or change the owner ID when retrieving their projects.
+
+### Retrieving a specific project
+
+Filtering the project list is not enough. We must also check ownership when a user opens an individual project.
+
+For example, when the user requests a project, we can retrieve it using both the project ID and the authenticated user's ID:
+
+```javascript
+const project = await prisma.project.findFirst({
+  where: {
+    id: Number(req.params.projectId),
+    userId: req.session.user.id
+  },
+
+  include: {
+    tasks: true
+  }
+});
+
+if (!project) {
+  return res.sendStatus(404);
+}
+```
+
+This query retrieves the project only when both conditions are satisfied:
+
+- The project ID matches the ID in the URL.
+- The project belongs to the currently authenticated user.
+
+If the project does not exist or belongs to someone else, the query returns `null`, and we respond with a `404 Not Found` status code.
+
+### Updating a project safely
+
+We must apply the same ownership check when a user updates a project.
+
+Checking ownership before displaying the project is not enough. The update operation itself must also ensure that the project belongs to the current user.
+
+For example:
+
+```javascript
+const result = await prisma.project.updateMany({
+  where: {
+    id: Number(req.params.projectId),
+    userId: req.session.user.id
+  },
+
+  data: {
+    title: req.body.title
+  }
+});
+
+if (result.count === 0) {
+  return res.sendStatus(404);
+}
+
+res.redirect("/projects");
+```
+
+Notice that we include the owner ID in the database operation itself. This prevents a user from updating another user's project simply by changing the project ID in the URL.
+
+The `updateMany()` method returns a result containing the number of records that were updated. If `count` is `0`, no project matched both conditions, so we return a `404` response.
+
+### Deleting a project safely
+
+```javascript
+const result = await prisma.project.deleteMany({
+  where: {
+    id: Number(req.params.projectId),
+    userId: req.session.user.id
+  }
+});
+
+if (result.count === 0) {
+  return res.sendStatus(404);
+}
+
+res.redirect("/projects");
+```
+
+The ownership check is also part of the deletion query. If no project matches both the requested ID and the current user's ID, nothing is deleted and we return a `404` response.
+
+This is a pattern we should use whenever users manage resources that belong to them.
+
+## Managing Tasks Within Projects
+
+Now that project ownership is in place, let's apply the same idea to tasks.
+
+A task belongs to a project, and a project belongs to a user. Therefore, before allowing someone to create, update, or delete a task, we must verify that the user owns the project containing that task.
+
+For example, when creating a task, first retrieve the project belonging to the current user:
+
+```javascript
+const project = await prisma.project.findFirst({
+  where: {
+    id: Number(req.params.projectId),
+    userId: req.session.user.id
+  }
+});
+
+if (!project) {
+  return res.sendStatus(404);
+}
+```
+
+If the project exists and belongs to the current user, we can create a task and connect it to that project:
+
+```javascript
+const task = await prisma.task.create({
+  data: {
+    title: req.body.title,
+    project: {
+      connect: {
+        id: project.id
+      }
+    }
+  }
+});
+```
+
+Notice that we do not accept a user ID from the form. We first verify the project using the authenticated user's ID from the session, then connect the new task to that project.
+
+This way, the browser cannot create a task inside another user's project by submitting a different owner ID.
+
+### Updating a task
+
+The same ownership rule applies when updating a task.
+
+We need to verify not only that the task exists, but also that its parent project belongs to the currently authenticated user. Prisma allows us to do this using a relation filter:
+
+```javascript
+const task = await prisma.task.findFirst({
+  where: {
+    id: Number(req.params.taskId),
+
+    project: {
+      is: {
+        userId: req.session.user.id
+      }
+    }
+  }
+});
+
+if (!task) {
+  return res.sendStatus(404);
+}
+```
+
+If the query returns a task, we know that it belongs to a project owned by the current user. We can then update it:
+
+```javascript
+await prisma.task.update({
+  where: {
+    id: task.id
+  },
+
+  data: {
+    status: "COMPLETED"
+  }
+});
+```
+
+We must apply the same ownership check when deleting a task or performing any other operation that modifies it. Never rely only on the task ID supplied in the URL.
+
+## Connecting Everything in Express
+
+At this point, we have introduced and implemented the main pieces of our application:
+
+- Prisma Client connected to PostgreSQL.
+- Database models and relationships.
+- CRUD operations for application records.
+- User registration and password hashing.
+- Login, logout, and session management.
+- Middleware for protecting authenticated routes.
+- Ownership checks for projects and tasks.
+
+We have looked at these features separately so that we could understand each one. Now let's connect them inside our Express application.
+
+Before configuring the main application, let's review how we can organise the project files.
+
+A possible project structure is:
+
+```text
+study-planner/
+│
+├── db/
+│   └── prisma.js
+│
+├── middleware/
+│   ├── csrf.js
+│   └── requireLogin.js
+│
+├── routes/
+│   ├── auth.js
+│   └── projects.js
+│
+├── views/
+│   ├── auth/
+│   │   ├── login.ejs
+│   │   └── register.ejs
+│   │
+│   └── projects/
+│       ├── index.ejs
+│       ├── show.ejs
+│       └── new.ejs
+│
+├── public/
+│   └── styles.css
+│
+├── prisma/
+│   └── schema.prisma
+│
+├── generated/
+├── prisma.config.ts
+├── app.js
+├── package.json
+└── .env
+```
+
+### CSRF protection
+
+We introduced CSRF protection in an earlier workshop when we worked with HTML forms. We will use the same concept here because our Study Planner contains forms that create, update, and delete resources.
+
+Before connecting the routes, let's place the CSRF configuration in its own middleware file so that we can reuse it throughout the application.
+
+Create `middleware/csrf.js`:
+
+```javascript
+import { csrfSync } from "csrf-sync";
+
+const {
+  generateToken,
+  csrfSynchronisedProtection
+} = csrfSync({
+  getTokenFromRequest: (req) => req.body?._csrf
+});
+
+export {
+  generateToken,
+  csrfSynchronisedProtection
+};
+```
+
+This file exports the functions we need to generate CSRF tokens and validate submitted tokens.
+
+We will generate a token for each session and make it available to our EJS templates. Every state-changing form should include that token in a hidden input field.
+
+### Main application configuration
+
+In `app.js`:
+
+```javascript
+import "dotenv/config";
+import express from "express";
+import session from "express-session";
+import path from "node:path";
+
+import authRoutes from "./routes/auth.js";
+import projectRoutes from "./routes/projects.js";
+import requireLogin from "./middleware/requireLogin.js";
+import { generateToken } from "./middleware/csrf.js";
+
+const app = express();
+
+app.set("view engine", "ejs");
+
+app.use(express.static(path.join(process.cwd(), "public")));
+
+app.use(express.urlencoded({ extended: false }));
+
+app.use(
+  session({
+    name: "sid",
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+
+    cookie: {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 1000 * 60 * 60 * 24
+    }
+  })
+);
+
+app.use((req, res, next) => {
+  res.locals.currentUser = req.session.user ?? null;
+  res.locals.csrfToken = generateToken(req);
+  next();
+});
+
+app.get("/", (req, res) => {
+  if (req.session.user) {
+    return res.redirect("/projects");
+  }
+
+  res.redirect("/login");
+});
 
 app.use(authRoutes);
-app.use(profile);
-app.use(wiki);
-app.get('/', (req, res) => {
-  const username = req.session.user?.username || null;
-  const messages = req.session.messages || [];
 
-  res.render('index', { username, messages });
+app.use("/projects", requireLogin, projectRoutes);
 
-  req.session.messages = [];
+app.use((req, res) => {
+  res.status(404).render("404");
 });
 
-app.use(notFoundHandler);
-app.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
+app.listen(3000, () => {
+  console.log("Server running at http://localhost:3000");
 });
 ```
 
-### Using Controllers
-As your Express.js app grows, you’ll quickly notice that the **route files become cluttered** with many endpoints and all their logic written directly inside the same file. This makes it harder to debug, update, or extend functionality, especially when multiple routes share similar operations. To solve this, we introduce a controllers folder. Each controller file groups functions that handle specific endpoints for a given resource (e.g., users, wikis, or profiles). For example, `Profile.js` can contain `getProfile`and `updateProfile` functions, each responsible for one endpoint’s logic. Then, the route file simply maps HTTP requests to these controller functions. This separation of concerns keeps the project clean, modular, and easier to maintain when an issue arises, you’ll immediately know where to look: in the controller that handles that specific route.
+Let's understand the order in which we register the middleware and routes.
+
+The order is important because each step depends on the previous one:
+
+1. **Static files:** Express serves files from the `public` directory.
+2. **Form parsing:** `express.urlencoded()` parses submitted form data so that it is available through `req.body`.
+3. **Sessions:** `express-session` makes session information available through `req.session`.
+4. **Template data:** We expose the current user and a CSRF token to our EJS templates.
+5. **Authentication routes:** We register the public registration, login, and logout routes.
+6. **Protected routes:** We apply `requireLogin` before the project router so that visitors must log in before accessing project pages.
+
+For example, session middleware must run before middleware that reads `req.session`. Similarly, form-parsing middleware must run before CSRF middleware that reads the token from `req.body`.
+
+Every form that changes application data should include the CSRF token. Add a hidden input to the corresponding EJS template:
+
+```html
+<input
+  type="hidden"
+  name="_csrf"
+  value="<%= csrfToken %>"
+>
+```
+
+The corresponding POST route should use `csrfSynchronisedProtection` before processing the submitted data.
+
+We also need to handle invalid or missing CSRF tokens and return an appropriate error response, normally `403 Forbidden`.
+
+Remember that the session configuration shown here uses Express's default in-memory store for development only. A production application needs a persistent session store and HTTPS.
+
+## Testing Our Application
+
+We have now connected the database client, session middleware, authentication routes, and protected project routes.
+
+Let's start the application and test the main features:
+
+```bash
+npm run dev
+```
+
+Open the application in your browser and work through the following scenarios. Try each case rather than only checking that the homepage loads.
+
+### Registration and login
+
+- Register a new account.
+- Try registering another account with the same username.
+- Check that the password stored in PostgreSQL is a hash, not the original password.
+- Log in using the correct credentials.
+- Try logging in with an incorrect password.
+- Log out and try accessing the project page again.
+
+### Project management
+
+- Create a project.
+- Create multiple projects.
+- Open a project and add tasks.
+- Update the project's title.
+- Mark a task as completed.
+- Delete a task.
+- Delete a project and check what happens to its associated tasks.
+
+### Authorization
+
+Create two different user accounts.
+
+For example:
+
+- User A creates a project.
+- User B logs in and creates another project.
+- User A tries to access User B's project by changing the project ID in the URL.
+- User A tries to update or delete User B's project.
+- User B tries to access a task belonging to User A's project.
+
+The application should prevent these operations.
+
+Remember: authorization must be enforced by the server, not only by the user interface.
+
+## Exercises and Independent Tasks
+
+We have used the Study Planner to bring the workshop concepts together. However, you should not limit yourself to this type of application.
+
+The following exercises introduce different scenarios so that you can practise designing models, defining relationships, performing CRUD operations, and applying authentication and authorization rules independently.
+
+### Task 1: Personal Reading Tracker
+
+In this task, create a reading tracker where users can manage the books they are currently reading.
+
+Each book should contain:
+
+- Title
+- Author
+- Description
+- Reading status
+- Date added
+
+Each user should be able to:
+
+- Register and log in.
+- Add books to their reading list.
+- View their own books.
+- Update a book's information.
+- Change its reading status.
+- Delete a book.
+
+Apply the same ownership rules used in the Study Planner.
+
+### Task 2: Recipe Organizer
+
+In this task, create an application where users can store and organise their own recipes.
+
+A recipe should contain:
+
+- Name
+- Description
+- Preparation time
+- Instructions
+
+Extend the database design to include ingredients.
+
+For example, one recipe can contain multiple ingredients, and the same ingredient can be used in multiple recipes.
+
+Design the required Prisma models and relationships.
+
+Consider using an explicit intermediate model if you need to store additional information, such as the quantity of an ingredient.
+
+### Task 3: Event Management System
+
+In this task, create a simple event management application.
+
+Users should be able to create events, while other users can register to attend them.
+
+An event should contain:
+
+- Title
+- Description
+- Location
+- Date
+- Organiser
+
+Think about how you would represent the relationship between users and events. A user can register for multiple events, and an event can have multiple registered users.
+
+Design the Prisma models and implement the required operations.
+
+Also consider how to prevent duplicate registrations and how to restrict event editing to the event's organiser.
